@@ -80,7 +80,7 @@ async function run() {
     config.env = options.env
   }
 
-  console.log('目标环境为：', config.env, config.name, config)
+  options.debug && console.log('目标环境为：', config.env, config.name, config)
 
   autodeploy(config, { backup: options.backup, rollback: options.rollback })
 }
