@@ -134,7 +134,7 @@ export default class SSHClient {
           mask: '*',
           message: `请输入${
             config === this.agentConfig ? '跳板机' : '服务器'
-          }密码`,
+          }密码（${config.username}）`,
           validate: (input, answer) => {
             if (!input) {
               return '请输入密码'

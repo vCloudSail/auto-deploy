@@ -1,5 +1,3 @@
-const fs = require('fs')
-
 const configs = {
   dev: {
     env: 'dev',
@@ -7,11 +5,10 @@ const configs = {
     server: {
       host: '192.168.xxx.xxx',
       port: '22',
-      username: 'xxx',
-      password: 'xxx'
+      username: 'xxx'
     },
     build: {
-      buildCmd: 'build'
+      cmd: 'build'
     },
     deploy: {
       deployPath: '/home/xxx'

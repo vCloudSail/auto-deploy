@@ -1,7 +1,7 @@
 {
   "name": "@cloudsail/auto-deploy",
   "private": false,
-  "version": "0.0.1-fix",
+  "version": "0.0.1-fix1",
   "description": "一个WEB前端自动化部署cli工具",
   "license": "MIT",
   "type": "module",
@@ -22,7 +22,8 @@
     "autodeploy": "bin/auto-deploy.js"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "node bin/auto-deploy.js",
+    "demo": "vite",
     "clean": "rimraf node_modules && rimraf package-lock.json && rimraf .eslintcache && rimraf pnpm-lock.yaml && rimraf yarn.lock",
     "reinstall": "npm run clean && yarn",
     "prepublish": "npm config set registry https://registry.npmjs.org",
@@ -45,7 +46,7 @@
   "keywords": [
     "cli",
     "deploy",
-    "Front-end automation"
+    "automation"
   ],
   "repository": {
     "type": "git",

@@ -27,7 +27,7 @@ export async function backup(
     if (needBackUp) {
       await execHook('backupBefore')
 
-      logger.info('备份文件夹 -> ' + backupPath)
+      // logger.info('备份文件夹 -> ' + backupPath)
 
       let backupName = `${deployFolder}_backup_${new Date()
         .toLocaleString()
@@ -72,18 +72,25 @@ export async function deploy(client, config, needBackup) {
     let deployPath = config.deploy?.deployPath?.trim().replace(/[/]$/gim, ''),
       deployFolder
 
+    const backupPath = (
+      config?.deploy?.backupPath != null
+        ? config?.deploy?.backupPath
+        : deployPath + '_backup'
+    )
+      .trim()
+      .replace(/[/]$/gim, '')
+
     const deployPathArr = deployPath.split('/')
 
     deployFolder = deployPathArr.pop()
     deployPath = deployPathArr.join('/') + '/'
 
     logger.info(
-      `部署信息：\r\n    ` +
-        [
-          `部署路径： ${deployPath}`,
-          `部署文件夹： ${deployFolder}`,
-          `是否备份： ${backup ? '是' : '否'}`
-        ].join('\r\n    ')
+      `部署信息：` +
+        `\r\n    部署路径： ${deployPath}` +
+        `\r\n    部署文件夹： ${deployFolder}` +
+        `\r\n    是否备份： ${needBackup ? '是' : '否'}` +
+        (needBackup ? `\r\n    备份路径: ${backupPath}` : '')
     )
 
     if (!deployPath || !deployFolder) {
@@ -127,9 +134,7 @@ export async function deploy(client, config, needBackup) {
       await backup(client, {
         deployPath,
         deployFolder,
-        backupPath: (config?.deploy?.backupPathh || deployPath + '_backup')
-          .trim()
-          .replace(/[/]$/gim, '')
+        backupPath
       })
     }
     // #endregion
@@ -151,7 +156,7 @@ export async function deploy(client, config, needBackup) {
     }
 
     try {
-      logger.loading('开始解压压缩包')
+      logger.loading('解压部署压缩包中...')
 
       // 先解压到临时文件夹，防止执行失败导致web无法访问
       let tempFolder = `autodeploy_${deployFolder}_temp`
@@ -165,34 +170,30 @@ export async function deploy(client, config, needBackup) {
         `cd ${deployPath};rm -rf ${deployFolder};mv -f ${tempFolder} ${deployFolder}`
       )
 
-      logger.success('解压文件成功')
+      logger.success('解压部署文件成功')
     } catch (error) {
-      logger.error('解压文件失败 -> ' + error)
+      logger.error('解压部署文件失败 -> ' + error)
       throw ''
     }
 
     try {
-      logger.loading('删除上传的部署压缩包中...')
+      logger.loading('删除上传的部署文件中...')
 
       await client.exec(`rm -rf ${deployPath}${outputPkgName}`)
 
-      logger.success(
-        `删除上传的部署压缩包成功 -> ${deployPath}${outputPkgName}`
-      )
+      logger.success(`删除上传的部署文件成功 -> ${deployPath}${outputPkgName}`)
     } catch (error) {
-      logger.error('删除上传的部署压缩包失败 -> ' + error)
-      throw ''
+      logger.error('删除上传的部署文件失败 -> ' + error)
     }
 
     try {
-      logger.loading('删除本地压缩包中')
+      logger.loading('删除本地部署文件中')
 
       await builder.deleteZip()
 
-      logger.success(`删除本地压缩包成功 -> ${outputPkgName}`)
+      logger.success(`删除本地部署文件成功 -> ${outputPkgName}`)
     } catch (error) {
-      logger.error('删除本地压缩包失败 -> ' + error)
-      throw ''
+      logger.error('删除本地部署文件失败 -> ' + error)
     }
 
     logger.success(

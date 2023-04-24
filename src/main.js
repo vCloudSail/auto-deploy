@@ -17,7 +17,7 @@ export default async function autodeploy(config, options) {
     const sshClient = new SSHClient({ ...config.server, agent: config.agent })
 
     logger.loading(
-      `正在通过SSH2连接服务器 -> ${config.server?.host}:${config.server?.port}`
+      `连接服务器中 -> ${config.server?.host}:${config.server?.port}`
     )
     try {
       await sshClient.connect()
@@ -38,8 +38,12 @@ export default async function autodeploy(config, options) {
     await sshClient.disconnect()
 
     await execHook('deployAfter')
+
+    process.exit(1)
   } catch (error) {
     logger.error(error.message)
+
+    process.exit(0)
   } finally {
     logger.info(`总耗时：${(new Date() - startTime) / 1000}秒`)
   }

@@ -36,6 +36,8 @@ async function run() {
 
   let originConfig
 
+  options.debug && console.log('当前执行目录：', process.cwd())
+
   try {
     const searchResult = await explorer.search(process.cwd())
 
@@ -67,7 +69,7 @@ async function run() {
         choices: configs?.map((item) => {
           return {
             value: item.env,
-            name: item.name
+            name: `${item.name} - ${item.server?.host}:${item.server?.port}`
           }
         })
       }
