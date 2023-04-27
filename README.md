@@ -101,12 +101,15 @@ autodeploy -env [env]
 
 # 备份当前版本
 autodeploy -bak
+
+# 版本回退
+autodeploy -rb
 ```
 
 ## 功能 & 计划
 - [x] 自动化部署
 - [x] 自动备份
-- [ ] 回退上一个版本\指定版本
+- [x] 回退上一个版本\指定版本
 - [ ] Docker镜像部署
 - [ ] 首次部署自动配置Nginx
 

@@ -26,7 +26,7 @@ program
   .usage('[env] [options]') // 使用方式介绍
   .option('-e, --env <env>', '指定目标环境')
   .option('-bak, --backup', '部署前是否备份当前服务器版本', false)
-  .option('-rb, --rollback <rollback>', '回退到指定版本', false)
+  .option('-rb, --rollback', '回退到指定版本', false)
   .parse(process.argv) // 格式化参数 返回参数的配置
 
 const options = program.opts()
@@ -84,7 +84,32 @@ async function run() {
 
   options.debug && console.log('目标环境为：', config.env, config.name, config)
 
-  autodeploy(config, { backup: options.backup, rollback: options.rollback })
+  // if (options.rollback === true) {
+  //   return
+  // }
+
+  autodeploy(
+    config,
+    { backup: options.backup, rollback: options.rollback },
+    {
+      chooseRollbackItem: async (list) => {
+        const { version } = await prompt([
+          {
+            type: 'list',
+            name: 'version',
+            message: '请选择回退的目标版本',
+            choices: list?.map((item) => {
+              return {
+                value: item,
+                name: item.replace('.tar.gz', '')
+              }
+            })
+          }
+        ])
+        return version
+      }
+    }
+  )
 }
 
 run()

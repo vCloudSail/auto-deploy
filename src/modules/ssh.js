@@ -217,20 +217,24 @@ export default class SSHClient {
   /**
    * 执行命令
    * @param {string} command
-   * @returns {Promise<boolean>}
+   * @returns {Promise<boolean|string>}
    */
   exec(command) {
     return new Promise((resolve, reject) => {
       return this.client.exec(command, (err, stream) => {
+        let output = ''
         if (err || !stream) {
           reject(err)
         } else {
           stream
             .on('close', (code, signal) => {
-              resolve(true)
+              resolve(output || true)
             })
             .on('data', function (data) {
-              // console.log(data.toString())
+              if (data) {
+                output += data.toString()
+                // output.push(data.toString())
+              }
             })
             .stderr.on('data', function (data) {
               reject(data.toString())

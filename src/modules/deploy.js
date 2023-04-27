@@ -4,6 +4,7 @@ import { execHook } from '../utils/index.js'
 import logger from '../utils/logger.js'
 import SSHClient from './ssh.js'
 import Builder from './builder.js'
+import dayjs from 'dayjs'
 
 /**
  * 备份
@@ -29,17 +30,19 @@ export async function backup(
 
       // logger.info('备份文件夹 -> ' + backupPath)
 
-      let backupName = `${deployFolder}_backup_${new Date()
-        .toLocaleString()
-        .replace(' ', '_')
-        .replace(/[/:]/gim, '')}`
+      let backupName = `${deployFolder}_backup_${dayjs().format(
+        'YYYYMMDDHHmmss'
+      )}`
 
       await client.exec(`mkdir ${backupPath}`).catch((err) => err)
       await client.exec(
-        `cp -r ${deployPath}${deployFolder} ${backupPath}/${backupName}`
+        `cd ${deployPath}/${deployFolder};tar -zcvf ${backupPath}/${backupName}.tar.gz ./`
       )
+      // await client.exec(
+      //   `cp -r ${deployPath}${deployFolder} ${backupPath}/${backupName}`
+      // )
 
-      logger.success(`备份当前版本成功 -> ${backupPath}/${backupName}`)
+      logger.success(`备份当前版本成功 -> ${backupPath}/${backupName}.tar.gz`)
 
       await execHook('backupAfter')
     }
@@ -51,10 +54,48 @@ export async function backup(
 /**
  * 回退版本
  * @param {SSHClient} client
- * @param {{backupPath:string}} config
+ * @param {{backupPath:string,version:string|number}} options
  */
-export async function rollback(client, { backupPath }) {
-  const backupList = await client.exec('ls -l')
+export async function rollback(
+  client,
+  { backupPath, deployPath, version, chooseRollbackItem } = {}
+) {
+  try {
+    const execResult = await client.exec('ls -t ' + backupPath)
+    const backupFileList =
+      typeof execResult === 'string'
+        ? execResult?.replace(/[\n]$/, '').split('\n')
+        : []
+
+    if (!backupFileList || backupFileList.length === 0) {
+      logger.warn('当前不存在历史版本')
+      return
+    }
+    if (version === true) {
+      version = await chooseRollbackItem?.([...backupFileList])
+    }
+
+    switch (typeof version) {
+      case 'number':
+        version = backupFileList[Math.abs(version)]
+        break
+      case 'string':
+        break
+    }
+    logger.loading(`回退到指定版本 -> ${version}`)
+
+    const tempPath = deployPath + '_rb_' + Date.now() + '/'
+
+    await client.exec(
+      `mkdir ${tempPath};tar -zxvPf ${backupPath}/${version} -C ${tempPath}`
+    )
+    await client.exec(`rm -rf ${deployPath};mv -f ${tempPath} ${deployPath}`)
+    // await client.exec(`rm ${backupPath}/${version}`)
+
+    logger.success(`成功回退到历史版本 -> ${version}`)
+  } catch (error) {
+    throw new Error('还原历史版本出错：' + (error || ''))
+  }
 }
 
 /**
@@ -75,7 +116,7 @@ export async function deploy(client, config, needBackup) {
     const backupPath = (
       config?.deploy?.backupPath != null
         ? config?.deploy?.backupPath
-        : deployPath + '_backup'
+        : path.resolve(deployPath, '_backup')
     )
       .trim()
       .replace(/[/]$/gim, '')

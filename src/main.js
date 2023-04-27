@@ -1,13 +1,17 @@
 import SSHClient from './modules/ssh.js'
-import { backup, deploy } from './modules/deploy.js'
-import { execHook } from './utils/index.js'
+import { backup, deploy, rollback } from './modules/deploy.js'
+import { execHook, getRollbackList } from './utils/index.js'
 import logger from './utils/logger.js'
 /**
  *
  * @param {import('index').DeployConfig} config
  * @param {import('index').DeployOptions} options
  */
-export default async function autodeploy(config, options) {
+export default async function autodeploy(
+  config,
+  options,
+  { chooseRollbackItem } = {}
+) {
   execHook._config = config
 
   const startTime = new Date()
@@ -29,19 +33,25 @@ export default async function autodeploy(config, options) {
       `连接到服务器成功 -> ${config.server?.host}:${config.server?.port}`
     )
 
-    if (options.rollback) {
-      return
+    if (!!options.rollback) {
+      await rollback(sshClient, {
+        backupPath: config.deploy.backupPath,
+        deployPath: config.deploy.deployPath,
+        version: options.rollback,
+        chooseRollbackItem
+      })
+      process.exit(1)
+    } else {
+      await deploy(sshClient, config, options.backup)
     }
-
-    await deploy(sshClient, config, options.backup)
-
+    
     await sshClient.disconnect()
 
     await execHook('deployAfter')
 
     process.exit(1)
   } catch (error) {
-    logger.error(error.message)
+    logger.error((error || '') + '')
 
     process.exit(0)
   } finally {
