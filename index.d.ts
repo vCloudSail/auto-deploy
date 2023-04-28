@@ -51,7 +51,9 @@ export interface DeployConfig {
   agent: SSHClientConfig
   /** 编译配置 */
   build: {
-    /** 编译命令，实际运行为npm run $buildCmd */
+    /** (优先级比cmd高)编译命令，实际运行为npm run $script */
+    script: string
+    /** 编译命令，实际运行为npm run $cmd */
     cmd: string
     /** 输出文件夹 */
     distPath: string
@@ -74,4 +76,3 @@ export interface DeployOptions {
 }
 
 export default function autodeply(config: DeployConfig): Promise<void>
-

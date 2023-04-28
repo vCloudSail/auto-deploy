@@ -71,18 +71,19 @@ export async function rollback(
       logger.warn('当前不存在历史版本')
       return
     }
+
     if (version === true) {
       version = await chooseRollbackItem?.([...backupFileList])
+    } else if (typeof version === 'number') {
+      version = backupFileList[Math.abs(version) - 1]
     }
 
-    switch (typeof version) {
-      case 'number':
-        version = backupFileList[Math.abs(version)]
-        break
-      case 'string':
-        break
+    if (!version) {
+      logger.error('无法找到指定历史版本，回退取消')
+      return
     }
-    logger.loading(`回退到指定版本 -> ${version}`)
+
+    logger.loading(`正在回退到版本${version}`)
 
     const tempPath = deployPath + '_rb_' + Date.now() + '/'
 
@@ -143,16 +144,22 @@ export async function deploy(client, config, needBackup) {
     let outputPkgName
     const distPath = config.build?.distPath || 'dist'
 
-    logger.loading(`编译项目中： npm run ${config.build?.cmd || 'build'}`)
-    await execHook('buildBefore')
-    try {
-      await builder.build(config.build?.cmd)
-    } catch (error) {
-      logger.error('编译失败：' + error)
-      throw ''
+    const buildCmd = config.build?.script || config.build?.cmd
+
+    if (buildCmd) {
+      logger.loading(`构建项目中： npm run ${buildCmd}`)
+      await execHook('buildBefore')
+      try {
+        await builder.build(buildCmd)
+      } catch (error) {
+        logger.error('构建失败：' + error)
+        throw ''
+      }
+      await execHook('buildAfter')
+      logger.success(`构建项目成功： npm run ${buildCmd}`)
+    } else {
+      logger.warn('未配置构建命令，跳过构建')
     }
-    await execHook('buildAfter')
-    logger.success(`编译项目成功： npm run ${config.build?.cmd || 'build'}`)
 
     logger.loading(`压缩项目中：${distPath} -> ${outputPkgName}`)
     try {

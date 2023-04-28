@@ -6,6 +6,7 @@ import logger from './utils/logger.js'
  *
  * @param {import('index').DeployConfig} config
  * @param {import('index').DeployOptions} options
+ * @param {import('index').RunningHooks} hooks
  */
 export default async function autodeploy(
   config,
@@ -44,7 +45,7 @@ export default async function autodeploy(
     } else {
       await deploy(sshClient, config, options.backup)
     }
-    
+
     await sshClient.disconnect()
 
     await execHook('deployAfter')

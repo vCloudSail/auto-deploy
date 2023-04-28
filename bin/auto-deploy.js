@@ -25,7 +25,7 @@ program
 program
   .usage('[env] [options]') // 使用方式介绍
   .option('-e, --env <env>', '指定目标环境')
-  .option('-bak, --backup', '部署前是否备份当前服务器版本', false)
+  .option('-bak, --backup', '部署前是否备份当前服务器版本')
   .option('-rb, --rollback', '回退到指定版本', false)
   .parse(process.argv) // 格式化参数 返回参数的配置
 
@@ -33,6 +33,7 @@ const options = program.opts()
 
 async function run() {
   const explorer = cosmiconfig('deploy')
+  const explorer1 = cosmiconfig('config')
 
   let originConfig
 
@@ -40,7 +41,8 @@ async function run() {
 
   try {
     const searchResult = await explorer.search(process.cwd())
-
+    const sad = await explorer1.search(process.cwd() + '/.git')
+    console.log('git配置', sad)
     originConfig = searchResult.config
   } catch (error) {
     console.error('无法获取到配置文件，请检查配置文件是否存在')
@@ -60,6 +62,11 @@ async function run() {
     })
   }
 
+  if (!configs || configs.length === 0) {
+    console.error('配置文件有误，请检查')
+    return process.exit(0)
+  }
+
   if (!options.env) {
     const { env } = await prompt([
       {
@@ -75,6 +82,27 @@ async function run() {
       }
     ])
     options.env = env
+  }
+  if (options.backup == null) {
+    const { backup } = await prompt([
+      {
+        type: 'list',
+        name: 'backup',
+        message: '是否备份当前版本?',
+        default: false,
+        choices: [
+          {
+            name: '是',
+            value: true
+          },
+          {
+            name: '否',
+            value: false
+          }
+        ]
+      }
+    ])
+    options.backup = backup
   }
 
   let config = configs.find((item) => item.env === options.env)

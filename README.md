@@ -35,11 +35,13 @@
 
 ### 安装
 
+全局安装插件
+
 ```shell
 npm i auto-deploy -g
 ```
 
-在项目根目录下创建deploy.config.js
+在项目的根目录下创建deploy.config.js
 
 ```javascript
 const configs = {
@@ -65,23 +67,25 @@ const configs = {
 module.exports = configs
 
 ```
+
 ### 参数
-| 名称             | 描述                                |
-| ---------------- | ----------------------------------- |
-| env              | 环境key                             |
-| name             | 环境名称                            |
-| server           | 服务器配置                          |
-| - host           | 主机IP/域名                         |
-| - port           | ssh端口                             |
-| - username(可选) | 用户名                              |
-| - password(可选) | 密码                                |
-| agent            | 跳板机配置（参数与server相同）      |
-| build            | 构建配置                            |
-| - cmd            | 构建命令(npm run $cmd)，默认为build |
-| - distPath       | 构建输出路径，默认为dist            |
-| deploy           | 部署配置                            |
-| - deployPath     | 部署路径                            |
-| - backupPath     | 备份路径                            |
+
+| 名称             | 描述                           |
+| ---------------- | ------------------------------ |
+| env              | 环境key                        |
+| name             | 环境名称                       |
+| server           | 服务器配置                     |
+| - host           | 主机IP/域名                    |
+| - port           | ssh端口                        |
+| - username(可选) | 用户名                         |
+| - password(可选) | 密码                           |
+| agent            | 跳板机配置（参数与server相同） |
+| build            | 构建配置                       |
+| - cmd            | script                         | 构建命令(npm run $cmd)，默认为build |
+| - distPath       | 构建输出路径，默认为dist       |
+| deploy           | 部署配置                       |
+| - deployPath     | 部署路径                       |
+| - backupPath     | 备份路径                       |
 
 ### 使用
 
@@ -108,11 +112,23 @@ autodeploy -rb
 
 ## 功能 & 计划
 - [x] 自动化部署
-- [x] 自动备份
-- [x] 回退上一个版本\指定版本
+  + [x] 支持动态输入服务器密码，避免将密码放在配置文件中造成泄露 
+  + [ ] 在本机缓存已输入的密码（防止每次都要去找密码）
+  + [ ] Windows服务器部署
+  + [x] Linux服务器部署
+  + [x] 备份功能
+    * [x] 部署时提供命令行列表选项
+- [x] 版本回退
+  + [x] 支持指定回退到上几个版本
+  + [x] 当没有指定回退版本时，为用户提供备份列表选项，用户可选择指定版本回退
 - [ ] Docker镜像部署
-- [ ] 首次部署自动配置Nginx
+- [ ] 自动配置Nginx
+- [ ] 抽离命令行工具的代码，以支持打包发布为js库
 
+
+## 注意事项
+
+- **目前本工具只能在nodejs环境下运行**
 
 ## 参与贡献
 1. Fork 本仓库
