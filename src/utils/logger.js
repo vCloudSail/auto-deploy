@@ -1,4 +1,3 @@
-
 /**
  * ERROR：处理当前操作时发生了严重的问题/失败，此类日志是需要尽快处理的。
  * WARN：警告等级，并没有阻止应用程序继续，当检测到意外的应用程序问题时会发出告警日志。对于这个等级的日志一般检查一下以决定是否应该解决。
@@ -15,21 +14,23 @@ let _logger = {
 
 let logger = {
   log(type = 'log', ...message) {
-    switch (type) {
-      case 'warn':
-        _logger.warn(...message)
-        break
-      case 'error':
-        _logger.error(...message)
-        break
-      case 'success':
-        _logger.success(...message)
-        break
-      case 'info':
-      default:
-        _logger.info(...message)
-        break
-    }
+    try {
+      switch (type) {
+        case 'warn':
+          _logger.warn(...message)
+          break
+        case 'error':
+          _logger.error(...message)
+          break
+        case 'success':
+          _logger.success(...message)
+          break
+        case 'info':
+        default:
+          _logger.info(...message)
+          break
+      }
+    } catch (error) {}
   },
 
   loading(message) {
@@ -58,8 +59,8 @@ let logger = {
 }
 
 /**
- * 
- * @param {import("index").Logger} newLogger 
+ *
+ * @param {import("index").Logger} newLogger
  */
 export function setLogger(newLogger) {
   _logger = newLogger

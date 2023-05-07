@@ -8,6 +8,7 @@
   "files": [
     "bin",
     "src",
+    "deploy.config.js",
     "index.d.ts"
   ],
   "main": "./dist/index.umd.cjs",
@@ -24,8 +25,8 @@
   "scripts": {
     "dev": "node bin/auto-deploy.js",
     "demo": "vite",
-    "clean": "rimraf node_modules && rimraf package-lock.json && rimraf .eslintcache && rimraf pnpm-lock.yaml && rimraf yarn.lock",
-    "reinstall": "npm run clean && yarn",
+    "clear": "rimraf node_modules && rimraf package-lock.json && rimraf .eslintcache && rimraf pnpm-lock.yaml && rimraf yarn.lock",
+    "reinstall": "npm run clear && yarn",
     "prepublish": "npm config set registry https://registry.npmjs.org",
     "postpublish": "npm config set registry https://registry.npm.taobao.org"
   },
@@ -37,7 +38,6 @@
     "crypto-js": "^4.1.1",
     "dayjs": "^1.11.7",
     "inquirer": "^9.0.0",
-    "node-localstorage": "^2.2.1",
     "ora": "5.1.0",
     "ssh2": "^1.0.0"
   },

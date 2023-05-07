@@ -6,11 +6,14 @@ const configs = {
       host: '192.168.xxx.xxx',
       port: '22',
       username: 'xxx'
+      // password: '' // 非必填
     },
     build: {
       cmd: 'build'
+      // distPath: 'dist' // 非必填
     },
     deploy: {
+      // bakupPath: '/xxx/xxx', // 非必填
       deployPath: '/home/xxx'
     }
   }

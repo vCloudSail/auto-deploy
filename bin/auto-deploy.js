@@ -4,11 +4,16 @@ import { createRequire } from 'module'
 import { createCommand } from 'commander'
 import { cosmiconfig } from 'cosmiconfig'
 import { createPromptModule } from 'inquirer'
+import fs from 'node:fs'
+
 import autodeploy, { setLogger } from '../src/main.js'
 // import autodeploy from '../dist/index.umd.cjs'
 import ora from 'ora'
+import path from 'path'
 
 const spinner = ora()
+const basePath = import.meta.url.replace(/file:\/+(.*auto-deploy)\/.*/gi, '$1')
+
 setLogger({
   loading(message) {
     if (message === '' || message === false) {
@@ -21,6 +26,9 @@ setLogger({
   },
   error(...msg) {
     return spinner.fail(msg?.join('  '))
+  },
+  warn(...msg) {
+    return spinner.warn(msg?.join('  '))
   },
   info(...msg) {
     return spinner.info(msg?.join('  '))
@@ -41,7 +49,7 @@ const program = createCommand()
 
 program
   .name('auto-deploy')
-  .description('一个WEB前端自动化部署cli工具')
+  .description('基于nodejs的WEB前端自动化部署cli工具')
   .version(pkg.version, '-v, -V, -version') // 从package.json中读取当前工具的最新版本号
   .option('-d, --debug', '是否开启调试模式', false)
 
@@ -50,11 +58,12 @@ program
   .option('-e, --env <env>', '指定目标环境')
   .option('-bak, --backup', '部署前是否备份当前服务器版本')
   .option('-rb, --rollback [rollback]', '回退到指定版本', 0)
+
   .parse(process.argv) // 格式化参数 返回参数的配置
 
 const options = program.opts()
 
-async function run() {
+async function main() {
   const explorer = cosmiconfig('deploy')
 
   let originConfig
@@ -66,7 +75,12 @@ async function run() {
 
     originConfig = searchResult.config
   } catch (error) {
-    console.error('无法获取到配置文件，请检查配置文件是否存在')
+    spinner.warn('不存在配置文件，将创建默认配置文件')
+
+    fs.writeFileSync(
+      path.resolve(process.cwd(), 'deploy.config.js'),
+      fs.readFileSync(path.resolve(basePath, 'deploy.config.js'))
+    )
     return
   }
 
@@ -162,4 +176,4 @@ async function run() {
   )
 }
 
-run()
+main()

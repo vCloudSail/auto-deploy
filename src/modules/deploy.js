@@ -34,7 +34,7 @@ export async function backup(
         'YYYYMMDDHHmmss'
       )}`
 
-      await client.exec(`mkdir ${backupPath}`).catch((err) => err)
+      await client.exec(`mkdir -p ${backupPath}`).catch((err) => err)
       await client.exec(
         `cd ${deployPath}/${deployFolder};tar -zcvf ${backupPath}/${backupName}.tar.gz ./`
       )
@@ -61,6 +61,8 @@ export async function rollback(
   { backupPath, deployPath, version, chooseRollbackItem } = {}
 ) {
   try {
+    await client.exec(`mkdir -p ${backupPath}`).catch((err) => err)
+    
     const execResult = await client.exec('ls -t ' + backupPath)
     const backupFileList =
       typeof execResult === 'string'
@@ -88,7 +90,7 @@ export async function rollback(
     const tempPath = deployPath + '_rb_' + Date.now() + '/'
 
     await client.exec(
-      `mkdir ${tempPath};tar -zxvPf ${backupPath}/${version} -C ${tempPath}`
+      `mkdir -p ${tempPath};tar -zxvPf ${backupPath}/${version} -C ${tempPath}`
     )
     await client.exec(`rm -rf ${deployPath};mv -f ${tempPath} ${deployPath}`)
     // await client.exec(`rm ${backupPath}/${version}`)
@@ -182,6 +184,10 @@ export async function deploy(client, config, needBackup) {
 
     await execHook('uploadBefore', client)
     try {
+      await client
+        .exec('mkdir -p ' + config.deploy.deployPath)
+        .catch((err) => err)
+
       let localPath = path.resolve(process.cwd(), outputPkgName)
       let remotePath = `${deployPath}${outputPkgName}`
 
