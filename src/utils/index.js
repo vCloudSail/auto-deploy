@@ -19,3 +19,13 @@ export async function getRollbackList(client, { backupPath } = {}) {
   const list = await client.exec(`ls ${backupPath}`)
   return list
 }
+
+export function getBackupPath(config) {
+  return (
+    config?.deploy?.backupPath != null
+      ? config?.deploy?.backupPath
+      : config.deploy.deployPath.trim().replace(/[/]$/gim, '') + '_backup'
+  )
+    .trim()
+    .replace(/[/]$/gim, '')
+}

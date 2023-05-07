@@ -4,8 +4,31 @@ import { createRequire } from 'module'
 import { createCommand } from 'commander'
 import { cosmiconfig } from 'cosmiconfig'
 import { createPromptModule } from 'inquirer'
-import autodeploy from '../src/main.js'
+import autodeploy, { setLogger } from '../src/main.js'
 // import autodeploy from '../dist/index.umd.cjs'
+import ora from 'ora'
+
+const spinner = ora()
+setLogger({
+  loading(message) {
+    if (message === '' || message === false) {
+      return spinner.stop()
+    }
+    return spinner.start(message)
+  },
+  success(...msg) {
+    return spinner.succeed(msg?.join('  '))
+  },
+  error(...msg) {
+    return spinner.fail(msg?.join('  '))
+  },
+  info(...msg) {
+    return spinner.info(msg?.join('  '))
+  },
+  debug(...msg) {
+    return spinner.info(msg?.join('  '))
+  }
+})
 
 const require = createRequire(import.meta.url)
 
@@ -26,14 +49,13 @@ program
   .usage('[env] [options]') // 使用方式介绍
   .option('-e, --env <env>', '指定目标环境')
   .option('-bak, --backup', '部署前是否备份当前服务器版本')
-  .option('-rb, --rollback', '回退到指定版本', false)
+  .option('-rb, --rollback [rollback]', '回退到指定版本', 0)
   .parse(process.argv) // 格式化参数 返回参数的配置
 
 const options = program.opts()
 
 async function run() {
   const explorer = cosmiconfig('deploy')
-  const explorer1 = cosmiconfig('config')
 
   let originConfig
 
@@ -41,8 +63,7 @@ async function run() {
 
   try {
     const searchResult = await explorer.search(process.cwd())
-    const sad = await explorer1.search(process.cwd() + '/.git')
-    console.log('git配置', sad)
+
     originConfig = searchResult.config
   } catch (error) {
     console.error('无法获取到配置文件，请检查配置文件是否存在')
@@ -83,7 +104,8 @@ async function run() {
     ])
     options.env = env
   }
-  if (options.backup == null) {
+
+  if (!options.rollback && options.backup == null) {
     const { backup } = await prompt([
       {
         type: 'list',

@@ -1,22 +1,10 @@
 import inquirer from 'inquirer'
-import ssh from './modules/ssh.js'
-
+import { PasswordCacher } from './utils/cacher.js'
+import path from 'node:path'
 async function test() {
-  // let res = await inquirer.prompt([
-  //   {
-  //     type: 'input',
-  //     name: 'password',
-  //     message: '请输入密码'
-  //   }
-  // ])
-  // console.log(res)
-  const client = new ssh({
-    host: '192.168.14.211',
-    port: '22',
-    username: 'root',
-    // password: 'Zxcvbn2022@$&*'
-  })
-  await client.connect()
+  // console.log(path.resolve())
+  console.log(PasswordCacher.get('asd'))
+  PasswordCacher.set('asd', 'asdasdasdasdasd')
 }
 
 test()

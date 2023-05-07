@@ -1,22 +1,11 @@
-/**
- * @typedef {object} DeployConfig
- * @property {string} name 部署环境名称
- * @property {string} host 主机地址
- * @property {string} port 端口
- * @property {string} username 用户名
- * @property {string} [password] 密码
- * @property {string} deployPath 部署路径，路径的最后一个文件夹为部署文件夹
- * @property {string} backupPath 备份路径
- * @property {string} buildCmd 编译命令，实际运行为npm run $buildCmd
- * @property {Function} deployBefore
- * @property {Function} buildBefore
- * @property {Function} buildAfter
- * @property {Function} uploadBefore
- * @property {Function} uploadAfter
- * @property {Function} backupBefore
- * @property {Function} backupAfter
- * @property {Function} deployAfter
- */
+export interface Logger {
+  loading(message): void
+  success(message): void
+  warn(message): void
+  error(message): void
+  info(message): void
+  debug(message): void
+}
 
 export interface DeployHooks {
   deployBefore: () => boolean
@@ -75,4 +64,13 @@ export interface DeployOptions {
   rollback: boolean | number
 }
 
-export default function autodeply(config: DeployConfig): Promise<void>
+export interface DeployRunningHooks {
+  chooseRollbackItem(list: string[]): Promise<string>
+}
+
+export default function autodeploy(
+  config: DeployConfig,
+  options: DeployOptions,
+  hooks,
+  Run
+): Promise<void>

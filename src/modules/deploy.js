@@ -114,13 +114,7 @@ export async function deploy(client, config, needBackup) {
     let deployPath = config.deploy?.deployPath?.trim().replace(/[/]$/gim, ''),
       deployFolder
 
-    const backupPath = (
-      config?.deploy?.backupPath != null
-        ? config?.deploy?.backupPath
-        : path.resolve(deployPath, '_backup')
-    )
-      .trim()
-      .replace(/[/]$/gim, '')
+    const backupPath = config.deploy?.backupPath
 
     const deployPathArr = deployPath.split('/')
 
@@ -141,7 +135,7 @@ export async function deploy(client, config, needBackup) {
 
     // #region 打包过程
     /** 打包压缩后的输出文件名 */
-    let outputPkgName
+    let outputPkgName = builder.outputPkgName
     const distPath = config.build?.distPath || 'dist'
 
     const buildCmd = config.build?.script || config.build?.cmd
@@ -164,7 +158,6 @@ export async function deploy(client, config, needBackup) {
     logger.loading(`压缩项目中：${distPath} -> ${outputPkgName}`)
     try {
       const buildRes = await builder.zip(distPath)
-      outputPkgName = buildRes.name
 
       logger.success(
         `压缩项目成功： ${distPath} -> ${outputPkgName} (size：${

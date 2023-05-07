@@ -1,12 +1,15 @@
 import SSHClient from './modules/ssh.js'
 import { backup, deploy, rollback } from './modules/deploy.js'
-import { execHook, getRollbackList } from './utils/index.js'
-import logger from './utils/logger.js'
+import { execHook, getBackupPath, getRollbackList } from './utils/index.js'
+import logger, { setLogger } from './utils/logger.js'
+
+
+export { setLogger }
 /**
  *
  * @param {import('index').DeployConfig} config
  * @param {import('index').DeployOptions} options
- * @param {import('index').RunningHooks} hooks
+ * @param {import('index').DeployRunningHooks} hooks
  */
 export default async function autodeploy(
   config,
@@ -33,6 +36,11 @@ export default async function autodeploy(
     logger.success(
       `连接到服务器成功 -> ${config.server?.host}:${config.server?.port}`
     )
+
+    config.deploy.deployPath = config.deploy.deployPath
+      .trim()
+      .replace(/[/]$/gim, '')
+    config.deploy.backupPath = getBackupPath(config)
 
     if (!!options.rollback) {
       await rollback(sshClient, {

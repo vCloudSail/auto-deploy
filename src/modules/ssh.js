@@ -1,7 +1,7 @@
 import logger from '../utils/logger.js'
 import inquirer from 'inquirer'
-import ora from 'ora'
 import ssh2 from 'ssh2'
+import { PasswordCacher } from '../utils/cacher.js'
 
 const isAgent = new RegExp(/agent/).test(process.env.npm_lifecycle_event)
 
@@ -37,7 +37,10 @@ export default class SSHClient {
    *
    * @param {import('index').SSHClientConfig&{agent:import('index').SSHClientConfig}} param
    */
-  constructor({ host, port, username, password, privateKey, agent } = {}) {
+  constructor(
+    { host, port, username, password, privateKey, agent } = {},
+    hook
+  ) {
     this.config = {
       host,
       port,
@@ -53,7 +56,10 @@ export default class SSHClient {
       this.clientAgent = new ssh2.Client() // 跳板机
       this.agentConfig = agent
     }
-
+    // this.cacher = new JsonCacher({
+    //   name: 'password',
+    //   encrypt: true
+    // })
     this.client = new ssh2.Client() // 目标机
   }
   /**
@@ -83,6 +89,8 @@ export default class SSHClient {
       const onReady = () => {
         resolve(true)
         callback()
+
+        PasswordCacher.set(`${config.host}@${config.username}`, config.password)
         // logger.success('连接成功')
       }
 
@@ -126,6 +134,15 @@ export default class SSHClient {
       config.username = username
     }
 
+    const hostKey = `${config.host}@${config.username}`
+    if (!config.password && PasswordCacher.has(hostKey)) {
+      logger.debug(
+        `缓存的服务器[${hostKey}]密码为:`,
+        PasswordCacher.get(hostKey)
+      )
+      config.password = PasswordCacher.get(hostKey)
+    }
+
     if (!config.password) {
       let { password } = await inquirer.prompt([
         {
@@ -134,7 +151,7 @@ export default class SSHClient {
           mask: '*',
           message: `请输入${
             config === this.agentConfig ? '跳板机' : '服务器'
-          }密码（${config.username}）`,
+          }密码（${config.host}:${config.port}@${config.username}）`,
           validate: (input, answer) => {
             if (!input) {
               return '请输入密码'

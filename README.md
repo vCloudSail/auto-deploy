@@ -8,7 +8,13 @@
 # auto-deploy
 
 ## 介绍
-这是一个WEB前端自动化部署cli工具
+这是一个基于nodejs的WEB前端自动化部署cli工具
+
+### 有何不同
+- 低成本，开发人员可根据开发进度灵活部署，降低与运维人员沟通成本
+- 多场景，避免了git hooks在某些场景下的不适用（比如git hooks会增加服务器压力，泄露源码）
+- 轻量级，不用安装jenkins那么重的框架
+
 
 ### 项目结构
 | 名称           | 描述                                                   |
@@ -77,18 +83,17 @@ module.exports = configs
 | server           | 服务器配置                     |
 | - host           | 主机IP/域名                    |
 | - port           | ssh端口                        |
-| - username(可选) | 用户名                         |
+| - username       | 用户名                         |
 | - password(可选) | 密码                           |
 | agent            | 跳板机配置（参数与server相同） |
 | build            | 构建配置                       |
 | - cmd            | script                         | 构建命令(npm run $cmd)，默认为build |
-| - distPath       | 构建输出路径，默认为dist       |
+| - distPath       | 构建后的输出路径，默认为dist   |
 | deploy           | 部署配置                       |
-| - deployPath     | 部署路径                       |
-| - backupPath     | 备份路径                       |
+| - deployPath     | 部署路径（不存在会自动创建） |
+| - backupPath     | 备份路径（不存在会自动创建） |
 
 ### 使用
-
 
 获取使用帮助
 ```shell
@@ -103,19 +108,22 @@ autodeploy
 # 指定环境
 autodeploy -env [env]
 
-# 备份当前版本
+# 指定备份当前版本
 autodeploy -bak
 
 # 版本回退
 autodeploy -rb
+
+# 回退到上一个版本
+autodeploy -rb -1
 ```
 
 ## 功能 & 计划
 - [x] 自动化部署
   + [x] 支持动态输入服务器密码，避免将密码放在配置文件中造成泄露 
-  + [ ] 在本机缓存已输入的密码（防止每次都要去找密码）
-  + [ ] Windows服务器部署
-  + [x] Linux服务器部署
+  + [x] 在本机缓存已输入的密码（加密处理），避免每次都要去找密码（存放位置：{用户文件夹}/.auto-deploy下）
+  + [ ] 部署到Windows服务器
+  + [x] 部署到Linux服务器
   + [x] 备份功能
     * [x] 部署时提供命令行列表选项
 - [x] 版本回退
@@ -127,8 +135,8 @@ autodeploy -rb
 
 
 ## 注意事项
-
-- **目前本工具只能在nodejs环境下运行**
+- **本工具目前只能在nodejs环境下运行**
+  - 由于使用了一些nodejs的cli应用库，导致构建后运行异常，所以目前没有进行构建和压缩，直接使用源码运行
 
 ## 参与贡献
 1. Fork 本仓库
