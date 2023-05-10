@@ -1,7 +1,8 @@
-import archiver from 'archiver'
 import path from 'node:path'
+import fs from 'node:fs'
+
+import archiver from 'archiver'
 import child_process from 'child_process'
-import fs from 'fs'
 const { exec } = child_process
 
 /**

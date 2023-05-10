@@ -4,7 +4,7 @@ import CryptoJS from 'crypto-js'
 import logger from './logger.js'
 
 // 密钥
-const SECRET_KEY = 'auto-deploy'
+const SECRET_KEY = 'auto-deploy' 
 // 密钥偏移量
 // const SECRET_IV = CryptoJS.enc.Utf8.parse('ovOh2xYoRdfATob6')
 

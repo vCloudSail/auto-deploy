@@ -5,11 +5,12 @@ import { createCommand } from 'commander'
 import { cosmiconfig } from 'cosmiconfig'
 import { createPromptModule } from 'inquirer'
 import fs from 'node:fs'
+import path from 'node:path'
 
-import autodeploy, { setLogger } from '../src/main.js'
-// import autodeploy from '../dist/index.umd.cjs'
+// import autodeploy, { setLogger } from '../src/main.js'
 import ora from 'ora'
-import path from 'path'
+
+import autodeploy , { setLogger }from '../dist/index.js'
 
 const spinner = ora()
 const basePath = import.meta.url.replace(/file:\/+(.*auto-deploy)\/.*/gi, '$1')

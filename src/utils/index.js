@@ -5,7 +5,7 @@ export async function execHook(name) {
   try {
     execHook._config?.hooks?.[name] && (await config[name]())
   } catch (error) {
-    throw new Error(`执行Hook-${name}出错 -> ${error.message}`)
+    throw new Error(`执行Hook出错(${name}) -> ${error.message}`)
   }
 }
 

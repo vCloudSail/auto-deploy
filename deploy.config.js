@@ -10,10 +10,10 @@ const configs = {
     },
     build: {
       cmd: 'build'
-      // distPath: 'dist' // 非必填
+      // distPath: 'dist' // 非必填，默认dist
     },
     deploy: {
-      // bakupPath: '/xxx/xxx', // 非必填
+      // bakupPath: '/xxx/xxx', // 非必填，默认deployPath+_backup
       deployPath: '/home/xxx'
     }
   }

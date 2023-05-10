@@ -1,6 +1,7 @@
-import { defineConfig } from 'vite'
-
 import path from 'node:path'
+import { defineConfig } from 'vite'
+import rollupExternalGlobals from 'rollup-plugin-external-globals'
+import rollupPolyfillNode from 'rollup-plugin-polyfill-node'
 
 const resolve = (_path) => {
   return path.resolve(__dirname, _path)
@@ -24,10 +25,24 @@ export default defineConfig((env) => {
       lib: {
         entry: './src/main.js',
         name: 'AutoDeploy',
-        fileName: 'index',
+        fileName: 'index'
         // formats: ['cjs']
       },
+      rollupOptions: {
+        external: [
+          /^node[:].*/i,
+          'child_process',
+          'archiver', // 包含需要 polyfill 的全局变量/模块
+          'chalk',
+          'commander',
+          'cosmiconfig',
+          'inquirer',
+          'ora',
+          'ssh2',
+          "crypto-js",
+          "dayjs"
+        ]
+      }
     }
   }
 })
-

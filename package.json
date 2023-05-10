@@ -7,7 +7,7 @@
   "type": "module",
   "files": [
     "bin",
-    "src",
+    "dist",
     "deploy.config.js",
     "index.d.ts"
   ],
@@ -24,6 +24,7 @@
   },
   "scripts": {
     "dev": "node bin/auto-deploy.js",
+    "build": "vite build",
     "demo": "vite",
     "clear": "rimraf node_modules && rimraf package-lock.json && rimraf .eslintcache && rimraf pnpm-lock.yaml && rimraf yarn.lock",
     "reinstall": "npm run clear && yarn",
@@ -43,6 +44,8 @@
   },
   "devDependencies": {
     "rimraf": "^5.0.0",
+    "rollup-plugin-external-globals": "^0.7.3",
+    "rollup-plugin-polyfill-node": "^0.12.0",
     "vite": "^4.0.4"
   },
   "keywords": [
