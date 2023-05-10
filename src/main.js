@@ -1,10 +1,10 @@
 import SSHClient from './modules/ssh.js'
 import { backup, deploy, rollback } from './modules/deploy.js'
 import { execHook, getBackupPath, getRollbackList } from './utils/index.js'
-import logger, { setLogger } from './utils/logger.js'
+import logger, { addLogger } from './utils/logger.js'
 
 
-export { setLogger }
+export { addLogger }
 /**
  *
  * @param {import('index').DeployConfig} config
@@ -24,7 +24,7 @@ export default async function autodeploy(
 
     const sshClient = new SSHClient({ ...config.server, agent: config.agent })
 
-    logger.loading(
+    logger.loading?.(
       `连接服务器中 -> ${config.server?.host}:${config.server?.port}`
     )
     try {
@@ -33,7 +33,7 @@ export default async function autodeploy(
       logger.error('连接服务器失败，请检查用户名、密码和代理配置： ' + error)
       return
     }
-    logger.success(
+    logger.info?.(
       `连接到服务器成功 -> ${config.server?.host}:${config.server?.port}`
     )
 

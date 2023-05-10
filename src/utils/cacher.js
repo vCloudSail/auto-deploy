@@ -2,15 +2,14 @@ import fs from 'node:fs'
 import path from 'node:path'
 import CryptoJS from 'crypto-js'
 import logger from './logger.js'
+import config from '@/conifg'
 
 // 密钥
-const SECRET_KEY = 'auto-deploy' 
+const SECRET_KEY = 'auto-deploy'
 // 密钥偏移量
 // const SECRET_IV = CryptoJS.enc.Utf8.parse('ovOh2xYoRdfATob6')
 
 // const dirname = import.meta.url.replace(/^file[:][/]+(.*)auto-deploy$/gi, '')
-
-const basePath = path.resolve(process.env.USERPROFILE, '.auto-deploy') // process.env.APPDATA // process.env
 
 class JsonCacher {
   /** @type {Map<string,any>} */
@@ -28,9 +27,9 @@ class JsonCacher {
    */
   constructor({ name, encrypt } = {}) {
     this.encrypt = encrypt
-    this.path = path.resolve(basePath, name)
+    this.path = path.resolve(config.cachePath, name)
 
-    if (fs.existsSync(basePath)) {
+    if (fs.existsSync(config.cachePath)) {
       const file = fs.readFileSync(this.path, {
         encoding: 'utf8',
         flag: 'r+'
@@ -86,8 +85,8 @@ class JsonCacher {
     let data = JSON.stringify(this.getAll())
     console.log(data)
 
-    if (!fs.existsSync(basePath)) {
-      fs.mkdirSync(basePath)
+    if (!fs.existsSync(config.cachePath)) {
+      fs.mkdirSync(config.cachePath)
     }
 
     if (this.encrypt) {

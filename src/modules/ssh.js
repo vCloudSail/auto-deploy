@@ -113,7 +113,7 @@ export default class SSHClient {
    * @returns
    */
   async checkConfig(config) {
-    logger.loading(false)
+    logger.loading?.(false)
 
     if (!config.username) {
       let { username } = await inquirer.prompt([

@@ -10,34 +10,34 @@ import path from 'node:path'
 // import autodeploy, { setLogger } from '../src/main.js'
 import ora from 'ora'
 
-import autodeploy , { setLogger }from '../dist/index.js'
+import autodeploy , { addLogger }from '../dist/index.js'
 
 const spinner = ora()
 const basePath = import.meta.url.replace(/file:\/+(.*auto-deploy)\/.*/gi, '$1')
 
-setLogger({
-  loading(message) {
-    if (message === '' || message === false) {
-      return spinner.stop()
-    }
-    return spinner.start(message)
-  },
-  success(...msg) {
-    return spinner.succeed(msg?.join('  '))
-  },
-  error(...msg) {
-    return spinner.fail(msg?.join('  '))
-  },
-  warn(...msg) {
-    return spinner.warn(msg?.join('  '))
-  },
-  info(...msg) {
-    return spinner.info(msg?.join('  '))
-  },
-  debug(...msg) {
-    return spinner.info(msg?.join('  '))
-  }
-})
+// addLogger({
+//   loading(message) {
+//     if (message === '' || message === false) {
+//       return spinner.stop()
+//     }
+//     return spinner.start(message)
+//   },
+//   success(...msg) {
+//     return spinner.succeed(msg?.join('  '))
+//   },
+//   error(...msg) {
+//     return spinner.fail(msg?.join('  '))
+//   },
+//   warn(...msg) {
+//     return spinner.warn(msg?.join('  '))
+//   },
+//   info(...msg) {
+//     return spinner.info(msg?.join('  '))
+//   },
+//   debug(...msg) {
+//     return spinner.info(msg?.join('  '))
+//   }
+// })
 
 const require = createRequire(import.meta.url)
 

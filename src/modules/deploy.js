@@ -15,7 +15,7 @@ export async function backup(
   client,
   { deployPath, deployFolder, backupPath } = {}
 ) {
-  logger.loading('开始备份服务器当前版本')
+  logger.loading?.('开始备份服务器当前版本')
   try {
     let needBackUp = true
     try {
@@ -42,7 +42,7 @@ export async function backup(
       //   `cp -r ${deployPath}${deployFolder} ${backupPath}/${backupName}`
       // )
 
-      logger.success(`备份当前版本成功 -> ${backupPath}/${backupName}.tar.gz`)
+      logger.info(`备份当前版本成功 -> ${backupPath}/${backupName}.tar.gz`)
 
       await execHook('backupAfter')
     }
@@ -85,7 +85,7 @@ export async function rollback(
       return
     }
 
-    logger.loading(`正在回退到版本${version}`)
+    logger.loading?.(`正在回退到版本${version}`)
 
     const tempPath = deployPath + '_rb_' + Date.now() + '/'
 
@@ -95,7 +95,7 @@ export async function rollback(
     await client.exec(`rm -rf ${deployPath};mv -f ${tempPath} ${deployPath}`)
     // await client.exec(`rm ${backupPath}/${version}`)
 
-    logger.success(`成功回退到历史版本 -> ${version}`)
+    logger.info(`成功回退到历史版本 -> ${version}`)
   } catch (error) {
     throw new Error('还原历史版本出错：' + (error || ''))
   }
@@ -143,7 +143,7 @@ export async function deploy(client, config, needBackup) {
     const buildCmd = config.build?.script || config.build?.cmd
 
     if (buildCmd) {
-      logger.loading(`构建项目中： npm run ${buildCmd}`)
+      logger.loading?.(`构建项目中： npm run ${buildCmd}`)
       await execHook('buildBefore')
       try {
         await builder.build(buildCmd)
@@ -152,16 +152,16 @@ export async function deploy(client, config, needBackup) {
         throw ''
       }
       await execHook('buildAfter')
-      logger.success(`构建项目成功： npm run ${buildCmd}`)
+      logger.info(`构建项目成功： npm run ${buildCmd}`)
     } else {
       logger.warn('未配置构建命令，跳过构建')
     }
 
-    logger.loading(`压缩项目中：${distPath} -> ${outputPkgName}`)
+    logger.loading?.(`压缩项目中：${distPath} -> ${outputPkgName}`)
     try {
       const buildRes = await builder.zip(distPath)
 
-      logger.success(
+      logger.info(
         `压缩项目成功： ${distPath} -> ${outputPkgName} (size：${
           buildRes.size / 1024
         }KB)`
@@ -191,11 +191,11 @@ export async function deploy(client, config, needBackup) {
       let localPath = path.resolve(process.cwd(), outputPkgName)
       let remotePath = `${deployPath}${outputPkgName}`
 
-      logger.loading(`上传压缩包中: ${localPath} -> ${remotePath}`)
+      logger.loading?.(`上传压缩包中: ${localPath} -> ${remotePath}`)
 
       await client.uploadFile(localPath, remotePath)
 
-      logger.success(`上传压缩包成功: ${localPath} -> ${remotePath}`)
+      logger.info(`上传压缩包成功: ${localPath} -> ${remotePath}`)
       await execHook('uploadAfter', client)
     } catch (error) {
       logger.error('上传压缩包失败 -> ' + error)
@@ -203,7 +203,7 @@ export async function deploy(client, config, needBackup) {
     }
 
     try {
-      logger.loading('解压部署压缩包中...')
+      logger.loading?.('解压部署压缩包中...')
 
       // 先解压到临时文件夹，防止执行失败导致web无法访问
       let tempFolder = `autodeploy_${deployFolder}_temp`
@@ -217,33 +217,33 @@ export async function deploy(client, config, needBackup) {
         `cd ${deployPath};rm -rf ${deployFolder};mv -f ${tempFolder} ${deployFolder}`
       )
 
-      logger.success('解压部署文件成功')
+      logger.info('解压部署文件成功')
     } catch (error) {
       logger.error('解压部署文件失败 -> ' + error)
       throw ''
     }
 
     try {
-      logger.loading('删除上传的部署文件中...')
+      logger.loading?.('删除上传的部署文件中...')
 
       await client.exec(`rm -rf ${deployPath}${outputPkgName}`)
 
-      logger.success(`删除上传的部署文件成功 -> ${deployPath}${outputPkgName}`)
+      logger.info(`删除上传的部署文件成功 -> ${deployPath}${outputPkgName}`)
     } catch (error) {
       logger.error('删除上传的部署文件失败 -> ' + error)
     }
 
     try {
-      logger.loading('删除本地部署文件中')
+      logger.loading?.('删除本地部署文件中')
 
       await builder.deleteZip()
 
-      logger.success(`删除本地部署文件成功 -> ${outputPkgName}`)
+      logger.info(`删除本地部署文件成功 -> ${outputPkgName}`)
     } catch (error) {
       logger.error('删除本地部署文件失败 -> ' + error)
     }
 
-    logger.success(
+    logger.info(
       `部署到${
         config.name
       }成功 -> ${deployPath}${deployFolder} (${new Date().toLocaleString()})`
