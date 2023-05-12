@@ -55,6 +55,8 @@ export interface DeployConfig {
     backupPath: string
   }
   hooks: DeployHooks
+  /** 用户交互方法 */
+  readonly prompt: import('inquirer').PromptFunction
 }
 
 export interface DeployOptions {
@@ -63,9 +65,29 @@ export interface DeployOptions {
   /** 是否恢复历史版本，如果是Number类型则表示还原上几个版本 */
   rollback: boolean | number
 }
+export interface DeployRunningPromptDataMap {
+  chooseRollbackItem: Array<{
+    value: string
+    label: string
+  }>
+  enterSSHPassword: null
+}
 
-export interface DeployRunningHooks {
-  chooseRollbackItem(list: string[]): Promise<string>
+export interface DeployRunningPrompt<
+  T extends keyof DeployRunningPromptDataMap
+> {
+  method: T
+  data: DeployRunningPromptDataMap[T]
+  type:
+    | 'input'
+    | 'number'
+    | 'confirm'
+    | 'list'
+    | 'rawlist'
+    | 'expand'
+    | 'checkbox'
+    | 'password'
+    | 'editor'
 }
 
 export default function autodeploy(

@@ -1,6 +1,9 @@
-import config from '@/conifg'
+// import settings from '@/settings'
 import dayjs from 'dayjs'
 import winston from 'winston'
+
+const logPath = './.deploy-logs'
+const logFileBaseName = dayjs().format('YYYY-MM-DD')
 
 /**
  * ERROR：处理当前操作时发生了严重的问题/失败，此类日志是需要尽快处理的。
@@ -10,29 +13,61 @@ import winston from 'winston'
  * TRACE：捕获有关应用程序行为的所有详细信息，主要用于详细跟踪应用程序逻辑。
  */
 
-const nowStr = dayjs().toString('YYYY_MM_DD_HH_mm_ss')
+const fileTransportFormat = winston.format.combine(
+  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss.SSS' }),
+  winston.format.align(),
+  // winston.format.colorize({level:true}),
+  winston.format.printf(
+    (info) =>
+      `[${info.timestamp}] [${info.level.toUpperCase()}]${info.message || ''}`
+    // typeof info === 'string'
+    //   ? info
+    //   : `[${info.timestamp}] [${info.level.toUpperCase()}]${info.message || ''}`
+  )
+)
 
 /** @type { winston.Logger} */
 const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.json(),
   transports: [
     new winston.transports.File({
-      dirname: config.logPath,
-      filename: 'info'
+      format: fileTransportFormat,
+      level: 'info',
+      dirname: logPath, // settings.logPath,
+      filename: `${logFileBaseName}.info.log`
     }),
-    new winston.transports.Console()
+    new winston.transports.File({
+      format: fileTransportFormat,
+      level: 'error',
+      dirname: logPath, // settings.logPath,
+      filename: `${logFileBaseName}.error.log`
+    })
+    // new winston.transports.Console({
+    //   format: winston.format.combine(
+    //     winston.format.printf((i) => `${i.level}: ${i.timestamp} ${i.message}`)
+    //   )
+    // })
   ]
 })
 
-// logger.log= function(le)
+// if (process.$debug) {
+//   logger.add(
+//     new winston.transports.File({
+//       level: 'debug',
+//       dirname: logPath, // settings.logPath,
+//       filename: logFileBaseName + '.debug'
+//     })
+//   )
+// }
+
 /**
  *
- * @param {import("index").Logger} newLogger
+ * @param {winston.transport} transport
+ * @returns {winston.Logger}
  */
-export function addLogger(newLogger) {
-  logger.add(newLogger)
-  logger.log('新增日志器')
+export function addTransport(transport) {
+  logger.add(transport)
+  logger.debug('新增日志器')
+  return logger
 }
 
 export default logger

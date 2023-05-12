@@ -2,14 +2,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import CryptoJS from 'crypto-js'
 import logger from './logger.js'
-import config from '@/conifg'
+import settings from '@/settings'
 
 // 密钥
 const SECRET_KEY = 'auto-deploy'
 // 密钥偏移量
 // const SECRET_IV = CryptoJS.enc.Utf8.parse('ovOh2xYoRdfATob6')
-
-// const dirname = import.meta.url.replace(/^file[:][/]+(.*)auto-deploy$/gi, '')
 
 class JsonCacher {
   /** @type {Map<string,any>} */
@@ -18,7 +16,7 @@ class JsonCacher {
   path
   /** @type {boolean} */
   encrypt
-
+  name
   /**
    *
    * @param {object} param
@@ -26,10 +24,11 @@ class JsonCacher {
    * @param {boolean} param.encrypt
    */
   constructor({ name, encrypt } = {}) {
+    this.name = name
     this.encrypt = encrypt
-    this.path = path.resolve(config.cachePath, name)
+    this.path = path.resolve(settings.cachePath, name)
 
-    if (fs.existsSync(config.cachePath)) {
+    if (fs.existsSync(settings.cachePath)) {
       const file = fs.readFileSync(this.path, {
         encoding: 'utf8',
         flag: 'r+'
@@ -83,10 +82,10 @@ class JsonCacher {
     logger.debug(`[JsonCacher] 保存数据到缓存文件`)
 
     let data = JSON.stringify(this.getAll())
-    console.log(data)
+    // console.log(data)
 
-    if (!fs.existsSync(config.cachePath)) {
-      fs.mkdirSync(config.cachePath)
+    if (!fs.existsSync(settings.cachePath)) {
+      fs.mkdirSync(settings.cachePath)
     }
 
     if (this.encrypt) {

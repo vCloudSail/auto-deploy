@@ -1,43 +1,57 @@
 #!/usr/bin/env node
 
+import fs from 'node:fs'
+import path from 'node:path'
+
 import { createRequire } from 'module'
 import { createCommand } from 'commander'
 import { cosmiconfig } from 'cosmiconfig'
 import { createPromptModule } from 'inquirer'
-import fs from 'node:fs'
-import path from 'node:path'
+import ora from 'ora'
+import winston from 'winston'
 
 // import autodeploy, { setLogger } from '../src/main.js'
-import ora from 'ora'
 
-import autodeploy , { addLogger }from '../dist/index.js'
+import autodeploy, { addTransport } from '../dist/index.js'
 
 const spinner = ora()
 const basePath = import.meta.url.replace(/file:\/+(.*auto-deploy)\/.*/gi, '$1')
 
-// addLogger({
-//   loading(message) {
-//     if (message === '' || message === false) {
-//       return spinner.stop()
-//     }
-//     return spinner.start(message)
-//   },
-//   success(...msg) {
-//     return spinner.succeed(msg?.join('  '))
-//   },
-//   error(...msg) {
-//     return spinner.fail(msg?.join('  '))
-//   },
-//   warn(...msg) {
-//     return spinner.warn(msg?.join('  '))
-//   },
-//   info(...msg) {
-//     return spinner.info(msg?.join('  '))
-//   },
-//   debug(...msg) {
-//     return spinner.info(msg?.join('  '))
-//   }
-// })
+const logger = addTransport(
+  new winston.transports.Console({
+    format: {
+      transform(data) {
+        if (data.level === 'info') {
+          if (data.loading) {
+            spinner.start(data.message)
+            return false
+          } else if (data.success) {
+            spinner.succeed(data.message)
+            return false
+          }
+          spinner.stop()
+          spinner.info(data.message)
+        } else {
+          if (!data.message) return false
+
+          spinner.stop()
+          switch (data.level) {
+            case 'warn':
+              spinner.warn(data.message)
+              break
+            case 'error':
+              spinner.fail(data.message)
+              break
+            case 'debug':
+              spinner.info(data.message)
+              break
+          }
+        }
+        return false
+      }
+    }
+  })
+)
 
 const require = createRequire(import.meta.url)
 
@@ -52,24 +66,28 @@ program
   .name('auto-deploy')
   .description('基于nodejs的WEB前端自动化部署cli工具')
   .version(pkg.version, '-v, -V, -version') // 从package.json中读取当前工具的最新版本号
-  .option('-d, --debug', '是否开启调试模式', false)
+  .option('-d, --debug [debug]', '是否开启调试模式', false)
 
 program
   .usage('[env] [options]') // 使用方式介绍
   .option('-e, --env <env>', '指定目标环境')
-  .option('-bak, --backup', '部署前是否备份当前服务器版本')
+  .option('-bak, --backup [backup]', '部署前是否备份当前服务器版本')
   .option('-rb, --rollback [rollback]', '回退到指定版本', 0)
-
   .parse(process.argv) // 格式化参数 返回参数的配置
 
 const options = program.opts()
 
 async function main() {
+  process.$debug = !!options.debug
+
   const explorer = cosmiconfig('deploy')
 
   let originConfig
-
-  options.debug && console.log('当前执行目录：', process.cwd())
+  if (options.debug) {
+    logger.level = 'debug'
+  }
+  logger.debug('当前执行目录：' + process.cwd())
+  logger.debug('当前文件目录：' + import.meta.url)
 
   try {
     const searchResult = await explorer.search(process.cwd())
@@ -147,34 +165,15 @@ async function main() {
     config.env = options.env
   }
 
-  options.debug && console.log('目标环境为：', config.env, config.name, config)
+  logger.debug(
+    `目标环境为：${config.env} ${config.name}\r\n ${JSON.stringify(config)}`
+  )
+  config.prompt = prompt
 
   // if (options.rollback === true) {
   //   return
   // }
-
-  autodeploy(
-    config,
-    { backup: options.backup, rollback: options.rollback },
-    {
-      chooseRollbackItem: async (list) => {
-        const { version } = await prompt([
-          {
-            type: 'list',
-            name: 'version',
-            message: '请选择回退的目标版本',
-            choices: list?.map((item) => {
-              return {
-                value: item,
-                name: item.replace('.tar.gz', '')
-              }
-            })
-          }
-        ])
-        return version
-      }
-    }
-  )
+  autodeploy(config, { backup: options.backup, rollback: options.rollback })
 }
 
 main()

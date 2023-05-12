@@ -1,7 +1,7 @@
 import logger from '../utils/logger.js'
-import inquirer from 'inquirer'
 import ssh2 from 'ssh2'
 import { PasswordCacher } from '../utils/cacher.js'
+import settings from '@/settings.js'
 
 const isAgent = new RegExp(/agent/).test(process.env.npm_lifecycle_event)
 
@@ -36,10 +36,11 @@ export default class SSHClient {
   /**
    *
    * @param {import('index').SSHClientConfig&{agent:import('index').SSHClientConfig}} param
+   * @param {import('index').DeployConfig} deployConfig
    */
   constructor(
     { host, port, username, password, privateKey, agent } = {},
-    hook
+    deployConfig
   ) {
     this.config = {
       host,
@@ -115,11 +116,12 @@ export default class SSHClient {
   async checkConfig(config) {
     logger.loading?.(false)
 
+    const prompt = settings.deployConfig.prompt
+
     if (!config.username) {
-      let { username } = await inquirer.prompt([
+      let { username } = await prompt?.([
         {
           type: 'input',
-          name: 'username',
           message: `请输入${
             config === this.agentConfig ? '跳板机' : '服务器'
           }用户名`,
@@ -144,7 +146,7 @@ export default class SSHClient {
     }
 
     if (!config.password) {
-      let { password } = await inquirer.prompt([
+      let { password } = await prompt([
         {
           type: 'password',
           name: 'password',
@@ -209,18 +211,41 @@ export default class SSHClient {
   }
 
   /**
-   * 上传文件
+   * 上传
    * @param {string} localPath
    * @param {string} remotePath
    * @returns {Promise<boolean>}
    */
-  uploadFile(localPath, remotePath) {
+  upload(localPath, remotePath) {
     return new Promise((resolve, reject) => {
       return this.client.sftp((err, sftp) => {
         if (err) {
           reject(err)
         } else {
           sftp.fastPut(localPath, remotePath, (err, result) => {
+            if (err) {
+              reject(err)
+            }
+            resolve(true)
+          })
+        }
+      })
+    })
+  }
+
+  /**
+   * 下载
+   * @param {string} remotePath
+   * @param {string} localPath
+   * @returns {Promise<boolean>}
+   */
+  download(remotePath, localPath) {
+    return new Promise((resolve, reject) => {
+      return this.client.sftp((err, sftp) => {
+        if (err) {
+          reject(err)
+        } else {
+          sftp.fastGet(remotePath, localPath, (err, result) => {
             if (err) {
               reject(err)
             }

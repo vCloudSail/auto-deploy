@@ -1,31 +1,59 @@
+import settings from './settings.js'
 import SSHClient from './modules/ssh.js'
 import { backup, deploy, rollback } from './modules/deploy.js'
 import { execHook, getBackupPath, getRollbackList } from './utils/index.js'
-import logger, { addLogger } from './utils/logger.js'
+import logger, { addTransport } from './utils/logger.js'
 
-
-export { addLogger }
+export { addTransport }
 /**
  *
  * @param {import('index').DeployConfig} config
  * @param {import('index').DeployOptions} options
- * @param {import('index').DeployRunningHooks} hooks
  */
-export default async function autodeploy(
-  config,
-  options,
-  { chooseRollbackItem } = {}
-) {
-  execHook._config = config
+export default async function autodeploy(config, options) {
+  settings.deployConfig = config
 
+  execHook._config = config
   const startTime = new Date()
+  
+  if (options.rollback) {
+    logger.info(`版本回退（${config.name || config.env}）`)
+  } else {
+    logger.info(`自动化部署（${config.name || config.env}）`)
+  }
+
+  function logOnExit(code) {
+    let action = '',
+      level = 'info'
+
+    switch (code) {
+      case 1001:
+        level = 'warn'
+        action = '用户强制退出，'
+        break
+    }
+
+    logger.log(
+      level,
+      `${action}部署结束，总耗时：${(new Date() - startTime) / 1000}秒 \r\n\r\n`
+    )
+  }
+
+  function forceExit() {
+    process.exit(1001)
+  }
+  ;['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGKILL', 'SIGBREAK'].forEach((item) => {
+    process.once(item, forceExit)
+  })
+  process.once('exit', logOnExit)
+
   try {
     await execHook('deployBefore')
 
     const sshClient = new SSHClient({ ...config.server, agent: config.agent })
-
-    logger.loading?.(
-      `连接服务器中 -> ${config.server?.host}:${config.server?.port}`
+    logger.info(
+      `连接服务器中 -> ${config.server?.host}:${config.server?.port}`,
+      { loading: true }
     )
     try {
       await sshClient.connect()
@@ -33,8 +61,9 @@ export default async function autodeploy(
       logger.error('连接服务器失败，请检查用户名、密码和代理配置： ' + error)
       return
     }
-    logger.info?.(
-      `连接到服务器成功 -> ${config.server?.host}:${config.server?.port}`
+    logger.info(
+      `连接到服务器成功 -> ${config.server?.host}:${config.server?.port}`,
+      { success: true }
     )
 
     config.deploy.deployPath = config.deploy.deployPath
@@ -46,10 +75,8 @@ export default async function autodeploy(
       await rollback(sshClient, {
         backupPath: config.deploy.backupPath,
         deployPath: config.deploy.deployPath,
-        version: options.rollback,
-        chooseRollbackItem
+        version: options.rollback
       })
-      process.exit(1)
     } else {
       await deploy(sshClient, config, options.backup)
     }
@@ -61,9 +88,6 @@ export default async function autodeploy(
     process.exit(1)
   } catch (error) {
     logger.error((error || '') + '')
-
     process.exit(0)
-  } finally {
-    logger.info(`总耗时：${(new Date() - startTime) / 1000}秒`)
   }
 }

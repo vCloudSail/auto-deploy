@@ -5,6 +5,8 @@ import logger from '../utils/logger.js'
 import SSHClient from './ssh.js'
 import Builder from './builder.js'
 import dayjs from 'dayjs'
+import settings from '@/settings.js'
+import { delayer } from '@/utils/delayer.js'
 
 /**
  * 备份
@@ -15,7 +17,7 @@ export async function backup(
   client,
   { deployPath, deployFolder, backupPath } = {}
 ) {
-  logger.loading?.('开始备份服务器当前版本')
+  logger.info('开始备份服务器当前版本', { loading: true })
   try {
     let needBackUp = true
     try {
@@ -42,7 +44,9 @@ export async function backup(
       //   `cp -r ${deployPath}${deployFolder} ${backupPath}/${backupName}`
       // )
 
-      logger.info(`备份当前版本成功 -> ${backupPath}/${backupName}.tar.gz`)
+      logger.info(`备份当前版本成功 -> ${backupPath}/${backupName}.tar.gz`, {
+        success: true
+      })
 
       await execHook('backupAfter')
     }
@@ -58,11 +62,11 @@ export async function backup(
  */
 export async function rollback(
   client,
-  { backupPath, deployPath, version, chooseRollbackItem } = {}
+  { backupPath, deployPath, version } = {}
 ) {
   try {
     await client.exec(`mkdir -p ${backupPath}`).catch((err) => err)
-    
+
     const execResult = await client.exec('ls -t ' + backupPath)
     const backupFileList =
       typeof execResult === 'string'
@@ -75,7 +79,23 @@ export async function rollback(
     }
 
     if (version === true) {
-      version = await chooseRollbackItem?.([...backupFileList])
+      const { _version } = await settings.deployConfig?.prompt?.([
+        {
+          type: 'list',
+          name: '_version',
+          message: '请选择回退的目标版本',
+          choices: backupFileList
+            ?.filter((item) => /[.]tar[.]gz$/gi.test(item))
+            .map((item) => {
+              return {
+                value: item,
+                label: item.replace('.tar.gz', '')
+              }
+            })
+        }
+      ])
+
+      version = _version || backupFileList[0]
     } else if (typeof version === 'number') {
       version = backupFileList[Math.abs(version) - 1]
     }
@@ -85,17 +105,17 @@ export async function rollback(
       return
     }
 
-    logger.loading?.(`正在回退到版本${version}`)
+    logger.info(`正在回退历史版本 -> ${version}`, { loading: true })
 
     const tempPath = deployPath + '_rb_' + Date.now() + '/'
 
     await client.exec(
       `mkdir -p ${tempPath};tar -zxvPf ${backupPath}/${version} -C ${tempPath}`
     )
-    await client.exec(`rm -rf ${deployPath};mv -f ${tempPath} ${deployPath}`)
+    await client.exec(`rm -rf ${deployPath};mv -f ${tempPath} ${deployPath};`)
     // await client.exec(`rm ${backupPath}/${version}`)
 
-    logger.info(`成功回退到历史版本 -> ${version}`)
+    logger.info(`成功回退到历史版本 -> ${version}`, { success: true })
   } catch (error) {
     throw new Error('还原历史版本出错：' + (error || ''))
   }
@@ -125,9 +145,9 @@ export async function deploy(client, config, needBackup) {
 
     logger.info(
       `部署信息：` +
-        `\r\n    部署路径： ${deployPath}` +
-        `\r\n    部署文件夹： ${deployFolder}` +
-        `\r\n    是否备份： ${needBackup ? '是' : '否'}` +
+        `\r\n    - 部署路径： ${deployPath}` +
+        `\r\n    - 部署文件夹： ${deployFolder}` +
+        `\r\n    - 是否备份： ${needBackup ? '是' : '否'}` +
         (needBackup ? `\r\n    备份路径: ${backupPath}` : '')
     )
 
@@ -143,7 +163,7 @@ export async function deploy(client, config, needBackup) {
     const buildCmd = config.build?.script || config.build?.cmd
 
     if (buildCmd) {
-      logger.loading?.(`构建项目中： npm run ${buildCmd}`)
+      logger.info(`构建项目中： npm run ${buildCmd}`, { loading: true })
       await execHook('buildBefore')
       try {
         await builder.build(buildCmd)
@@ -152,19 +172,22 @@ export async function deploy(client, config, needBackup) {
         throw ''
       }
       await execHook('buildAfter')
-      logger.info(`构建项目成功： npm run ${buildCmd}`)
+      logger.info(`构建项目成功： npm run ${buildCmd}`, { success: true })
     } else {
       logger.warn('未配置构建命令，跳过构建')
     }
 
-    logger.loading?.(`压缩项目中：${distPath} -> ${outputPkgName}`)
+    logger.info(`压缩项目中：${distPath} -> ${outputPkgName}`, {
+      loading: true
+    })
     try {
       const buildRes = await builder.zip(distPath)
 
       logger.info(
         `压缩项目成功： ${distPath} -> ${outputPkgName} (size：${
           buildRes.size / 1024
-        }KB)`
+        }KB)`,
+        { success: true }
       )
     } catch (error) {
       logger.error('压缩失败 ->' + error)
@@ -191,11 +214,15 @@ export async function deploy(client, config, needBackup) {
       let localPath = path.resolve(process.cwd(), outputPkgName)
       let remotePath = `${deployPath}${outputPkgName}`
 
-      logger.loading?.(`上传压缩包中: ${localPath} -> ${remotePath}`)
+      logger.info(`上传压缩包中: ${localPath} -> ${remotePath}`, {
+        loading: true
+      })
 
-      await client.uploadFile(localPath, remotePath)
+      await client.upload(localPath, remotePath)
 
-      logger.info(`上传压缩包成功: ${localPath} -> ${remotePath}`)
+      logger.info(`上传压缩包成功: ${localPath} -> ${remotePath}`, {
+        success: true
+      })
       await execHook('uploadAfter', client)
     } catch (error) {
       logger.error('上传压缩包失败 -> ' + error)
@@ -203,7 +230,7 @@ export async function deploy(client, config, needBackup) {
     }
 
     try {
-      logger.loading?.('解压部署压缩包中...')
+      logger.info('解压部署压缩包中...', { loading: true })
 
       // 先解压到临时文件夹，防止执行失败导致web无法访问
       let tempFolder = `autodeploy_${deployFolder}_temp`
@@ -217,37 +244,42 @@ export async function deploy(client, config, needBackup) {
         `cd ${deployPath};rm -rf ${deployFolder};mv -f ${tempFolder} ${deployFolder}`
       )
 
-      logger.info('解压部署文件成功')
+      logger.info('解压部署文件成功', { success: true })
     } catch (error) {
       logger.error('解压部署文件失败 -> ' + error)
       throw ''
     }
 
     try {
-      logger.loading?.('删除上传的部署文件中...')
+      logger.info('删除上传的部署文件中...', { loading: true })
 
       await client.exec(`rm -rf ${deployPath}${outputPkgName}`)
 
-      logger.info(`删除上传的部署文件成功 -> ${deployPath}${outputPkgName}`)
+      logger.info(`删除上传的部署文件成功 -> ${deployPath}${outputPkgName}`, {
+        success: true
+      })
     } catch (error) {
       logger.error('删除上传的部署文件失败 -> ' + error)
     }
 
     try {
-      logger.loading?.('删除本地部署文件中')
+      logger.info('删除本地部署文件中', { loading: true })
 
       await builder.deleteZip()
 
-      logger.info(`删除本地部署文件成功 -> ${outputPkgName}`)
+      logger.info(`删除本地部署文件成功 -> ${outputPkgName}`, { success: true })
     } catch (error) {
       logger.error('删除本地部署文件失败 -> ' + error)
     }
 
+    await delayer(1)
     logger.info(
       `部署到${
         config.name
-      }成功 -> ${deployPath}${deployFolder} (${new Date().toLocaleString()})`
+      }成功 -> ${deployPath}${deployFolder} (${new Date().toLocaleString()})`,
+      { success: true }
     )
+    await delayer(1)
   } catch (error) {
     logger.error(`部署到${config.name}失败${error ? ` -> ${error}` : ''}`)
   } finally {
