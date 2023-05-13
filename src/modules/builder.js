@@ -102,10 +102,13 @@ export default class Builder {
     })
   }
 
-  build(buildCmd = 'build') {
+  build(buildCmd) {
     // console.log(chalk.blue('[Builder]: 开始编译项目'))
     return new Promise((resolve, reject) => {
-      exec('npm run ' + buildCmd, (error, stdout, stderr) => {
+      if (!buildCmd) {
+        return reject('buildCmd is null')
+      }
+      exec(buildCmd, (error, stdout, stderr) => {
         if (error) {
           // console.error(error)
           reject(error)

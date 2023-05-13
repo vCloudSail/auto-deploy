@@ -9,7 +9,8 @@ const configs = {
       // password: '' // 非必填
     },
     build: {
-      cmd: 'build'
+      script: 'build' // script参数会自动在前面拼接npm run
+      // cmd: 'npm run build' , // 如果配置cmd参数，则要写前缀
       // distPath: 'dist' // 非必填，默认dist
     },
     deploy: {

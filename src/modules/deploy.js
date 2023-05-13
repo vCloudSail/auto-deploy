@@ -33,7 +33,7 @@ export async function backup(
       // logger.info('备份文件夹 -> ' + backupPath)
 
       let backupName = `${deployFolder}_backup_${dayjs().format(
-        'YYYYMMDDHHmmss'
+        'YYYY_MM_DD_HH_mm_ss'
       )}`
 
       await client.exec(`mkdir -p ${backupPath}`).catch((err) => err)
@@ -160,10 +160,12 @@ export async function deploy(client, config, needBackup) {
     let outputPkgName = builder.outputPkgName
     const distPath = config.build?.distPath || 'dist'
 
-    const buildCmd = config.build?.script || config.build?.cmd
+    const buildCmd = config.build?.cmd
+      ? config.build?.cmd
+      : `npm run ${config.build?.script || 'build'}`
 
     if (buildCmd) {
-      logger.info(`构建项目中： npm run ${buildCmd}`, { loading: true })
+      logger.info(`构建项目中：${buildCmd}`, { loading: true })
       await execHook('buildBefore')
       try {
         await builder.build(buildCmd)
