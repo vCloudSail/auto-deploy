@@ -26,7 +26,7 @@ const fileTransportFormat = winston.format.combine(
   )
 )
 
-/** @type { winston.Logger} */
+/** @type {winston.Logger} */
 const logger = winston.createLogger({
   transports: [
     new winston.transports.File({

@@ -114,11 +114,10 @@ export default class SSHClient {
    * @returns
    */
   async checkConfig(config) {
-    logger.loading?.(false)
-
     const prompt = settings.deployConfig.prompt
 
     if (!config.username) {
+      logger.warn('配置文件不存在用户名，等待手动输入')
       let { username } = await prompt?.([
         {
           type: 'input',
@@ -146,6 +145,7 @@ export default class SSHClient {
     }
 
     if (!config.password) {
+      logger.warn('配置文件不存在密码，等待手动输入')
       let { password } = await prompt([
         {
           type: 'password',

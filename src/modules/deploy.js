@@ -146,7 +146,7 @@ export async function deploy(client, config, needBackup) {
     logger.info(
       `部署信息：` +
         `\r\n    - 部署路径： ${deployPath}` +
-        `\r\n    - 部署文件夹： ${deployFolder}` +
+        `\r\n    - 部署目录： ${deployFolder}` +
         `\r\n    - 是否备份： ${needBackup ? '是' : '否'}` +
         (needBackup ? `\r\n    备份路径: ${backupPath}` : '')
     )
