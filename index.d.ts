@@ -51,8 +51,10 @@ export interface DeployConfig {
   deploy: {
     /** 部署路径，路径的最后一个文件夹为部署文件夹 */
     deployPath: string
-    /** 备份路径，默认为部署路径的父路径/autp-deploy_backup */
+    /** 备份路径，默认为deployPath+_backup */
     backupPath: string
+    /** 备份路径，默认为deployPath_logs */
+    logPath: string
   }
   hooks: DeployHooks
   /** 用户交互方法 */

@@ -2,8 +2,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 
 import archiver from 'archiver'
-import child_process from 'child_process'
-const { exec } = child_process
+import { exec } from 'child-process-promise'
 
 /**
  * 构建器
@@ -104,22 +103,22 @@ export default class Builder {
 
   build(buildCmd) {
     // console.log(chalk.blue('[Builder]: 开始编译项目'))
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       if (!buildCmd) {
         return reject('buildCmd is null')
       }
-      exec(buildCmd, (error, stdout, stderr) => {
-        if (error) {
-          // console.error(error)
-          reject(error)
-        } else if (stdout) {
-          resolve(stdout)
-          // console.log(chalk.green('[Builder]: 编译完成'))
-        } else {
-          // console.error(stderr)
-          reject(stderr)
-        }
-      })
+      const { error, stdout, stderr } = await exec(buildCmd)
+
+      if (error) {
+        // console.error(error)
+        reject(error)
+      } else if (stdout) {
+        resolve(stdout)
+        // console.log(chalk.green('[Builder]: 编译完成'))
+      } else {
+        // console.error(stderr)
+        reject(stderr)
+      }
     })
   }
 

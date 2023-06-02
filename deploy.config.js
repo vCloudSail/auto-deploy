@@ -14,8 +14,9 @@ const configs = {
       // distPath: 'dist' // 非必填，默认dist
     },
     deploy: {
-      // bakupPath: '/xxx/xxx', // 非必填，默认deployPath+_backup
       deployPath: '/home/xxx'
+      // bakupPath: '/home/xxx_backup', // 非必填，默认deployPath+_backup
+      // logPath: '/home/xxx_logs', // 非必填，默认deployPath+_logs
     }
   }
 }

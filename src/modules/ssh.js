@@ -137,10 +137,10 @@ export default class SSHClient {
 
     const hostKey = `${config.host}@${config.username}`
     if (!config.password && PasswordCacher.has(hostKey)) {
-      logger.debug(
-        `缓存的服务器[${hostKey}]密码为:`,
-        PasswordCacher.get(hostKey)
-      )
+      // logger.debug(
+      //   `缓存的服务器[${hostKey}]密码为:`,
+      //   PasswordCacher.get(hostKey)
+      // )
       config.password = PasswordCacher.get(hostKey)
     }
 

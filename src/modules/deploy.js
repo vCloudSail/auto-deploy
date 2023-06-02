@@ -1,12 +1,61 @@
 import path from 'node:path'
 
-import { execHook } from '../utils/index.js'
+import { execHook, getDefaultOperator } from '../utils/index.js'
 import logger from '../utils/logger.js'
 import SSHClient from './ssh.js'
 import Builder from './builder.js'
 import dayjs from 'dayjs'
 import settings from '@/settings.js'
 import { delayer } from '@/utils/delayer.js'
+
+/**
+ * 备份
+ * @param {SSHClient} client
+ * @param {object} options
+ * @param {boolean} options.success
+ * @param {'deploy'|'backup'|'rollback'} options.mode
+ * @param {import('index').DeployConfig} options.config
+ * @param {string} options.message
+ */
+async function appendRecord(
+  client,
+  {
+    mode = 'deploy',
+    config = settings.deployConfig,
+    message = '',
+    success
+  } = {}
+) {
+  try {
+    let action = '',
+      operator = await getDefaultOperator()
+    switch (mode) {
+      case 'backup':
+        action = '备份'
+        break
+      case 'deploy':
+        action = '部署'
+        break
+      case 'rollback':
+        action = '版本回退'
+        break
+    }
+
+    const today = dayjs().format('YYYY-MM-DD')
+
+    await client.exec(`mkdir -p ${config.deploy.logPath}`).catch((err) => err)
+    await client.exec(
+      `echo "[${dayjs().format('YYYY-MM-DD HH:mm:ss.SSS')}] [${
+        success ? 'Success' : 'Fail'
+      }] ${operator}执行${action}${success ? '成功' : '失败'}${
+        message ? `${message || '无'}` : ''
+      }" >> ${config.deploy.logPath}/${today}.log`
+    )
+    logger.info('服务器追加操作日志成功', { success: true })
+  } catch (error) {
+    logger.error('服务器追加操作日志失败：' + error)
+  }
+}
 
 /**
  * 备份
@@ -32,8 +81,8 @@ export async function backup(
 
       // logger.info('备份文件夹 -> ' + backupPath)
 
-      let backupName = `${deployFolder}_backup_${dayjs().format(
-        'YYYY_MM_DD_HH_mm_ss'
+      let backupName = `${deployFolder}_bak_${dayjs().format(
+        'YYYYMMDD_HH_mm_ss'
       )}`
 
       await client.exec(`mkdir -p ${backupPath}`).catch((err) => err)
@@ -48,9 +97,19 @@ export async function backup(
         success: true
       })
 
+      await appendRecord(client, {
+        success: true,
+        mode: 'backup',
+        message: ` -> ${backupName}.tar.gz`
+      })
       await execHook('backupAfter')
     }
   } catch (error) {
+    await appendRecord(client, {
+      success: false,
+      mode: 'backup',
+      message: error
+    })
     throw new Error(`备份失败（${error}）`)
   }
 }
@@ -116,7 +175,18 @@ export async function rollback(
     // await client.exec(`rm ${backupPath}/${version}`)
 
     logger.info(`成功回退到历史版本 -> ${version}`, { success: true })
+
+    await appendRecord(client, {
+      success: true,
+      mode: 'rollback',
+      message: ` -> ${version}`
+    })
   } catch (error) {
+    await appendRecord(client, {
+      success: false,
+      mode: 'rollback',
+      message: ` -> ${version}  ${error}`
+    })
     throw new Error('还原历史版本出错：' + (error || ''))
   }
 }
@@ -252,6 +322,12 @@ export async function deploy(client, config, needBackup) {
       throw ''
     }
 
+    await appendRecord(client, {
+      success: true,
+      mode: 'deploy',
+      message: ` -> 版本迭代`
+    })
+
     try {
       logger.info('删除上传的部署文件中...', { loading: true })
 
@@ -281,8 +357,12 @@ export async function deploy(client, config, needBackup) {
       }成功 -> ${deployPath}${deployFolder} (${new Date().toLocaleString()})`,
       { success: true }
     )
-    await delayer(1)
   } catch (error) {
+    await appendRecord(client, {
+      success: false,
+      mode: 'deploy',
+      message: error
+    })
     logger.error(`部署到${config.name}失败${error ? ` -> ${error}` : ''}`)
   } finally {
     // await builder.deleteZip()

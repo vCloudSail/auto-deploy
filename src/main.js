@@ -1,8 +1,13 @@
 import settings from './settings.js'
 import SSHClient from './modules/ssh.js'
 import { backup, deploy, rollback } from './modules/deploy.js'
-import { execHook, getBackupPath, getRollbackList } from './utils/index.js'
+import {
+  execHook,
+  getDeployConfigPath,
+  checkDeployConfig
+} from './utils/index.js'
 import logger, { addTransport } from './utils/logger.js'
+import { delayer } from './utils/delayer.js'
 
 export { addTransport }
 /**
@@ -15,7 +20,7 @@ export default async function autodeploy(config, options) {
 
   execHook._config = config
   const startTime = new Date()
-  
+
   if (options.rollback) {
     logger.info(`版本回退（${config.name || config.env}）`)
   } else {
@@ -48,6 +53,8 @@ export default async function autodeploy(config, options) {
   process.once('exit', logOnExit)
 
   try {
+    checkDeployConfig(config)
+
     await execHook('deployBefore')
 
     const sshClient = new SSHClient({ ...config.server, agent: config.agent })
@@ -69,7 +76,16 @@ export default async function autodeploy(config, options) {
     config.deploy.deployPath = config.deploy.deployPath
       .trim()
       .replace(/[/]$/gim, '')
-    config.deploy.backupPath = getBackupPath(config)
+    config.deploy.backupPath = getDeployConfigPath(
+      config,
+      config.deploy.backupPath,
+      '_backup'
+    )
+    config.deploy.logPath = getDeployConfigPath(
+      config,
+      config.deploy.logPath,
+      '_logs'
+    )
 
     if (!!options.rollback) {
       await rollback(sshClient, {
@@ -80,11 +96,11 @@ export default async function autodeploy(config, options) {
     } else {
       await deploy(sshClient, config, options.backup)
     }
-
-    await sshClient.disconnect()
+    await delayer(1)
 
     await execHook('deployAfter')
 
+    sshClient.disconnect()
     process.exit(1)
   } catch (error) {
     logger.error((error || '') + '')
