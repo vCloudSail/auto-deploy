@@ -1,3 +1,4 @@
+/** @type {{[key:string]:import('./deploy.config').DeployConfig}} */
 const configs = {
   dev: {
     env: 'dev',

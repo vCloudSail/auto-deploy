@@ -1,7 +1,7 @@
 {
   "name": "@cloudsail/auto-deploy",
   "private": false,
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "一个WEB前端自动化部署cli工具",
   "license": "MIT",
   "type": "module",
@@ -42,8 +42,9 @@
     "crypto-js": "^4.1.1",
     "dayjs": "^1.11.7",
     "inquirer": "^9.0.0",
+    "lodash": "^4.17.21",
     "ora": "5.1.0",
-    "ssh2": "^1.0.0",
+    "ssh2": "^1.14.0",
     "winston": "^3.8.2"
   },
   "devDependencies": {

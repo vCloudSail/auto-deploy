@@ -26,9 +26,9 @@ async function appendRecord(
     success
   } = {}
 ) {
+  let action = '',
+    operator = await getDefaultOperator()
   try {
-    let action = '',
-      operator = await getDefaultOperator()
     switch (mode) {
       case 'backup':
         action = '备份'
@@ -51,9 +51,9 @@ async function appendRecord(
         message ? `${message || '无'}` : ''
       }" >> ${config.deploy.logPath}/${today}.log`
     )
-    logger.info('服务器追加操作日志成功', { success: true })
+    logger.info(`服务器追加操作日志成功（${action}）`, { success: true })
   } catch (error) {
-    logger.error('服务器追加操作日志失败：' + error)
+    logger.error(`服务器追加操作日志失败（${action}）：` + error)
   }
 }
 
@@ -77,7 +77,7 @@ export async function backup(
     }
 
     if (needBackUp) {
-      await execHook('backupBefore')
+      await execHook('backupBefore', client)
 
       // logger.info('备份文件夹 -> ' + backupPath)
 
@@ -85,7 +85,9 @@ export async function backup(
         'YYYYMMDD_HH_mm_ss'
       )}`
 
-      await client.exec(`mkdir -p ${backupPath}`).catch((err) => err)
+      await client.exec(`mkdir -p ${backupPath}`).catch((err) => {
+        logger.debug('创建备份文件夹失败', err)
+      })
       await client.exec(
         `cd ${deployPath}/${deployFolder};tar -zcvf ${backupPath}/${backupName}.tar.gz ./`
       )
@@ -102,15 +104,15 @@ export async function backup(
         mode: 'backup',
         message: ` -> ${backupName}.tar.gz`
       })
-      await execHook('backupAfter')
+      await execHook('backupAfter', client)
     }
   } catch (error) {
-    await appendRecord(client, {
-      success: false,
-      mode: 'backup',
-      message: error
-    })
-    throw new Error(`备份失败（${error}）`)
+    // await appendRecord(client, {
+    //   success: false,
+    //   mode: 'backup',
+    //   message: error
+    // })
+    throw new Error(`备份失败 -> ${error}`)
   }
 }
 
@@ -200,7 +202,7 @@ export async function rollback(
 export async function deploy(client, config, needBackup) {
   const builder = new Builder(config.env)
   try {
-    await execHook('deployBefore')
+    await execHook('deployBefore', { config, client })
 
     // 删除尾部斜杠
     let deployPath = config.deploy?.deployPath?.trim().replace(/[/]$/gim, ''),
@@ -218,7 +220,7 @@ export async function deploy(client, config, needBackup) {
         `\r\n    - 部署路径： ${deployPath}` +
         `\r\n    - 部署目录： ${deployFolder}` +
         `\r\n    - 是否备份： ${needBackup ? '是' : '否'}` +
-        (needBackup ? `\r\n    备份路径: ${backupPath}` : '')
+        (needBackup ? `\r\n    - 备份路径: ${backupPath}` : '')
     )
 
     if (!deployPath || !deployFolder) {
@@ -230,25 +232,27 @@ export async function deploy(client, config, needBackup) {
     let outputPkgName = builder.outputPkgName
     const distPath = config.build?.distPath || 'dist'
 
-    const buildCmd = config.build?.cmd
-      ? config.build?.cmd
-      : `npm run ${config.build?.script || 'build'}`
+    const buildCmd =
+      config.build?.cmd != null
+        ? config.build?.cmd
+        : `npm run ${config.build?.script || 'build'}`
 
     if (buildCmd) {
       logger.info(`构建项目中：${buildCmd}`, { loading: true })
-      await execHook('buildBefore')
+      await execHook('buildBefore', { config, client })
       try {
         await builder.build(buildCmd)
       } catch (error) {
         logger.error('构建失败：' + error)
         throw ''
       }
-      await execHook('buildAfter')
       logger.info(`构建项目成功： npm run ${buildCmd}`, { success: true })
+      await execHook('buildAfter', { config, client })
     } else {
       logger.warn('未配置构建命令，跳过构建')
     }
 
+    await execHook('compressBefore', { config, client })
     logger.info(`压缩项目中：${distPath} -> ${outputPkgName}`, {
       loading: true
     })
@@ -261,6 +265,7 @@ export async function deploy(client, config, needBackup) {
         }KB)`,
         { success: true }
       )
+      await execHook('compressAfter', { config, client })
     } catch (error) {
       logger.error('压缩失败 ->' + error)
       throw ''
@@ -277,14 +282,23 @@ export async function deploy(client, config, needBackup) {
     }
     // #endregion
 
-    await execHook('uploadBefore', client)
+    // let uploadPkgPath = `${deployPath}/${outputPkgName}`
+
+    await execHook('uploadBefore', { config, client })
     try {
+      if (config.deploy.uploadPath) {
+        await client
+          .exec(`mkdir -p ${config.deploy.uploadPath}`)
+          .catch((err) => err)
+      }
       await client
-        .exec('mkdir -p ' + config.deploy.deployPath)
+        .exec(`mkdir -p ${config.deploy.deployPath}`)
         .catch((err) => err)
 
       let localPath = path.resolve(process.cwd(), outputPkgName)
-      let remotePath = `${deployPath}${outputPkgName}`
+      let remotePath = `${
+        (config.deploy.uploadPath || deployPath).replace(/[/]$/, '') + '/'
+      }${outputPkgName}`
 
       logger.info(`上传压缩包中: ${localPath} -> ${remotePath}`, {
         loading: true
@@ -295,59 +309,94 @@ export async function deploy(client, config, needBackup) {
       logger.info(`上传压缩包成功: ${localPath} -> ${remotePath}`, {
         success: true
       })
-      await execHook('uploadAfter', client)
+
+      if (config.deploy.uploadPath) {
+        logger.info(
+          `配置了uploadPath，调整压缩包位置中: ${remotePath} -> ${deployPath}${outputPkgName}`,
+          {
+            loading: true
+          }
+        )
+        await client.exec(`cp ${remotePath} ${deployPath}`)
+
+        logger.info(
+          `调整压缩包位置成功: ${remotePath} -> ${deployPath}${outputPkgName}`,
+          {
+            success: true
+          }
+        )
+      }
+
+      await execHook('uploadAfter', { config, client })
     } catch (error) {
       logger.error('上传压缩包失败 -> ' + error)
       throw ''
     }
 
+    // 先解压到临时文件夹，防止执行失败导致web无法访问
+    let unzipTempFolder = `autodeploy_${deployFolder}_temp`
+    let unzipCmd = `unzip -o ${deployPath + outputPkgName} -d ${
+      deployPath + unzipTempFolder
+    }`
+    let originTempFolder = `${deployFolder}_cache_${
+      (Math.random() + 100) * 1000
+    }`
+
     try {
       logger.info('解压部署压缩包中...', { loading: true })
 
-      // 先解压到临时文件夹，防止执行失败导致web无法访问
-      let tempFolder = `autodeploy_${deployFolder}_temp`
-      let unzipCmd = `unzip -o ${deployPath + outputPkgName} -d ${
-        deployPath + tempFolder
-      }`
-
+      /**
+       * 解压到临时文件夹
+       */
       await client.exec(unzipCmd)
-      // 解压成功后再重命名临时文件夹
+      /**
+       * 1. 将原始项目文件夹重命名为临时文件夹名称
+       * 2. 将新的部署项目重命名为项目文件夹名称
+       * 3. 删除原始项目的临时文件夹
+       */
       await client.exec(
-        `cd ${deployPath};rm -rf ${deployFolder};mv -f ${tempFolder} ${deployFolder}`
+        `mv -f ${deployPath}${deployFolder} ${deployPath}${originTempFolder};mv -f ${deployPath}${unzipTempFolder} ${deployPath}${deployFolder};rm -rf ${deployPath}${originTempFolder}`
       )
 
       logger.info('解压部署文件成功', { success: true })
-    } catch (error) {
-      logger.error('解压部署文件失败 -> ' + error)
-      throw ''
-    }
 
-    await appendRecord(client, {
-      success: true,
-      mode: 'deploy',
-      message: ` -> 版本迭代`
-    })
-
-    try {
-      logger.info('删除上传的部署文件中...', { loading: true })
-
-      await client.exec(`rm -rf ${deployPath}${outputPkgName}`)
-
-      logger.info(`删除上传的部署文件成功 -> ${deployPath}${outputPkgName}`, {
-        success: true
+      await appendRecord(client, {
+        success: true,
+        mode: 'deploy',
+        message: ` -> 版本迭代`
       })
     } catch (error) {
-      logger.error('删除上传的部署文件失败 -> ' + error)
-    }
+      logger.error('解压部署文件失败 -> ' + error)
+      await client
+        .exec(
+          `mv -f ${deployPath}${originTempFolder} ${deployPath}${deployFolder}`
+        )
+        .catch((err) => err)
+      throw ''
+    } finally {
+      try {
+        logger.info('删除上传的部署文件中...', { loading: true })
 
-    try {
-      logger.info('删除本地部署文件中', { loading: true })
+        await client.exec(`rm -rf ${deployPath}${outputPkgName}`)
 
-      await builder.deleteZip()
+        logger.info(`删除上传的部署文件成功 -> ${deployPath}${outputPkgName}`, {
+          success: true
+        })
+      } catch (error) {
+        logger.error('删除上传的部署文件失败 -> ' + error)
+      }
 
-      logger.info(`删除本地部署文件成功 -> ${outputPkgName}`, { success: true })
-    } catch (error) {
-      logger.error('删除本地部署文件失败 -> ' + error)
+      try {
+        logger.info('删除本地部署文件中', { loading: true })
+
+        await builder.deleteZip()
+
+        logger.info(`删除本地部署文件成功 -> ${outputPkgName}`, {
+          success: true
+        })
+      } catch (error) {
+        logger.error('删除本地部署文件失败 -> ' + error)
+      }
     }
 
     await delayer(1)
@@ -357,13 +406,16 @@ export async function deploy(client, config, needBackup) {
       }成功 -> ${deployPath}${deployFolder} (${new Date().toLocaleString()})`,
       { success: true }
     )
+
+    await execHook('deployAfter', { config, client })
   } catch (error) {
     await appendRecord(client, {
       success: false,
       mode: 'deploy',
       message: error
     })
-    logger.error(`部署到${config.name}失败${error ? ` -> ${error}` : ''}`)
+    error && logger.error(error)
+    logger.error(`部署到${config.name}失败`)
   } finally {
     // await builder.deleteZip()
   }

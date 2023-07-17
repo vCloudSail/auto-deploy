@@ -18,7 +18,6 @@ export { addTransport }
 export default async function autodeploy(config, options) {
   settings.deployConfig = config
 
-  execHook._config = config
   const startTime = new Date()
 
   if (options.rollback) {
@@ -55,9 +54,10 @@ export default async function autodeploy(config, options) {
   try {
     checkDeployConfig(config)
 
-    await execHook('deployBefore')
-
-    const sshClient = new SSHClient({ ...config.server, agent: config.agent })
+    const sshClient = new SSHClient(
+      { ...config.server, agent: config.agent },
+      config
+    )
     logger.info(
       `连接服务器中 -> ${config.server?.host}:${config.server?.port}`,
       { loading: true }
@@ -65,13 +65,9 @@ export default async function autodeploy(config, options) {
     try {
       await sshClient.connect()
     } catch (error) {
-      logger.error('连接服务器失败，请检查用户名、密码和代理配置： ' + error)
+      process.exit(0)
       return
     }
-    logger.info(
-      `连接到服务器成功 -> ${config.server?.host}:${config.server?.port}`,
-      { success: true }
-    )
 
     config.deploy.deployPath = config.deploy.deployPath
       .trim()
@@ -97,8 +93,6 @@ export default async function autodeploy(config, options) {
       await deploy(sshClient, config, options.backup)
     }
     await delayer(1)
-
-    await execHook('deployAfter')
 
     sshClient.disconnect()
     process.exit(1)
