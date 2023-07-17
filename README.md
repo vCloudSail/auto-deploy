@@ -71,8 +71,9 @@ const configs = {
       // distPath: 'dist' // 非必填，默认dist
     },
     deploy: {
-      // bakupPath: '/xxx/xxx', // 非必填，默认deployPath+_backup
       deployPath: '/home/xxx',
+      // bakupPath: '/home/xxx_backup', // 非必填，默认deployPath+_backup
+      // logPath: '/home/xxx_logs', // 非必填，默认deployPath+_logs
     }
   }
 }
@@ -85,22 +86,35 @@ module.exports = configs
 
 **注意！！！目前没有做参数校验，所以请按照规范填写参数**
 
-| 名称             | 描述                                                                                       |
-| ---------------- | ------------------------------------------------------------------------------------------ |
-| env              | 环境key                                                                                    |
-| name             | 环境名称                                                                                   |
-| server           | 服务器配置                                                                                 |
-| - host           | 主机IP/域名                                                                                |
-| - port           | ssh端口                                                                                    |
-| - username       | 用户名                                                                                     |
-| - password(可选) | 密码                                                                                       |
-| agent            | 跳板机配置（参数与server相同）                                                             |
-| build            | 构建配置                                                                                   |
-| - cmd/script     | 构建命令(如果是cmd，则命令为$cmd，如果是script则命令为npm run $script)，默认为script=build |
-| - distPath       | 构建后的输出路径，默认为dist                                                               |
-| deploy           | 部署配置                                                                                   |
-| - deployPath     | 部署路径（不存在会自动创建）                                                               |
-| - backupPath     | 备份路径（不存在会自动创建）                                                               |
+| 名称               | 描述                                              |
+| ------------------ | ------------------------------------------------- |
+| env                | 环境key                                           |
+| name               | 环境名称                                          |
+| server             | 服务器配置                                        |
+| - host             | 主机IP/域名                                       |
+| - port             | ssh端口                                           |
+| - username         | 用户名                                            |
+| - password(可选)   | 密码                                              |
+| agent(可选)        | 跳板机配置（参数与server相同）                    |
+| build              | 构建配置                                          |
+| - script           | 构建命令：npm run $script ，默认script=build      |
+| - cmd(可选)        | 构建命令：$cmd，如何指定为false，则表示不进行构建 |
+| - distPath         | 构建后的输出路径，默认为dist                      |
+| deploy             | 部署配置                                          |
+| - uploadPath(可选) | 部署包上传路径                                    |
+| - deployPath       | 部署路径（不存在会自动创建）                      |
+| - backupPath(可选) | 备份路径（不存在会自动创建）                      |
+| hooks(可选)        | 生命周期钩子                                      |
+| - deployBefore     | 部署之前                                          |
+| - buildBefore      | 构建之前                                          |
+| - buildAfter       | 构建之后                                          |
+| - compressBefore   | 压缩之前                                          |
+| - compressAfter    | 压缩之后                                          |
+| - uploadBefore     | 上传之前                                          |
+| - uploadAfter      | 上传之后                                          |
+| - backupBefore     | 备份之前                                          |
+| - backupAfter      | 备份之后                                          |
+| - deployAfter      | 部署之后                                          |
 
 ### 使用
 
@@ -135,12 +149,13 @@ autodeploy -rb -1
   + [x] 部署到Linux服务器
   + [x] 备份功能
     * [x] 部署时提供命令行列表选项
+  + [x] 支持通过跳板机、私钥连接服务器部署、备份
 - [x] 版本回退
   + [x] 支持指定回退到上几个版本
   + [x] 当没有指定回退版本时，为用户提供备份列表选项，用户可选择指定版本回退
 - [x] 部署日志记录
   - [x] 本地日志
-  - [ ] 服务器日志 
+  - [x] 服务器日志(目前根据当前git仓库作者姓名写入简单的部署日志)
 - [x] 支持非npm、nodejs项目(配置build.cmd参数)
 - [ ] Docker镜像部署
 - [ ] 自动配置Nginx

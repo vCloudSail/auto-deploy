@@ -3,12 +3,19 @@ import logger from './logger'
 
 /**
  * @param {keyof import("index").DeployHooks} name
+ * @param {object} options
  */
-export async function execHook(name) {
+export async function execHook(name, options = {}) {
   try {
-    execHook._config?.hooks?.[name] && (await config[name]())
+    const config = options?.config
+    if (config?.hooks?.[name]) {
+      logger.info(`执行Hooks(${name})中`, { loading: true })
+      await config.hooks[name](options)
+      logger.info(`执行Hooks(${name})成功`, { success: true })
+    }
   } catch (error) {
-    throw new Error(`执行Hook出错(${name}) -> ${error.message}`)
+    logger.error(`执行Hook(${name})出错 -> ${error}`)
+    // throw new Error(`执行Hook(${name})出错 -> ${error.message}`)
   }
 }
 
@@ -41,7 +48,7 @@ export function getDeployConfigPath(config, path, defaultName = '') {
 }
 
 export async function getDefaultOperator() {
-  let { stderr, stdout, error } = await exec('git config --worktree user.name')
+  let { stderr, stdout, error } = await exec('git config user.name')
 
   if (stdout) {
     stdout = stdout.replace(/[\r|\n]/, '')
