@@ -19,6 +19,18 @@ export async function execHook(name, options = {}) {
   }
 }
 
+export async function execStep({ action, fn, info } = {}) {
+  if (!action || !fn) return
+
+  try {
+    logger.info(`${action}中...`, { loading: true })
+    await fn()
+    logger.info(`${action}成功` + info, { success: true })
+  } catch (error) {
+    logger.error(`${action}失败 -> ${error}`)
+  }
+}
+
 /**
  *
  * @param {import('@/modules/ssh').default} client
@@ -66,5 +78,25 @@ export async function getDefaultOperator() {
 export function checkDeployConfig(config) {
   if (!config.deploy?.deployPath) {
     throw new Error('未填写部署路径 -> deploy.deployPath')
+  }
+}
+
+/**
+ * 格式化文件大小
+ * @param {number} size 
+ * @returns 
+ */
+export function formatFileSize(size) {
+  if (!size) {
+    return
+  }
+
+  const b = size / 1024
+  if (b < 1024.0) {
+    return b.toFixed(2) + ' KB'
+  } else if (b < 1024000.0) {
+    return (b / 1024).toFixed(2) + ' MB'
+  } else {
+    return (b / 1024000).toFixed(2) + ' GB'
   }
 }

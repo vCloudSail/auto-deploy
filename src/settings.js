@@ -6,7 +6,10 @@ const settings = {
   /**
    * @type {import('index').DeployConfig}
    */
-  deployConfig: null
+  deployConfig: null,
+  /**
+   */
+  projectPackage: null
 }
 
 export default settings

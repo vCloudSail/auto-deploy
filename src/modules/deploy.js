@@ -1,12 +1,14 @@
 import path from 'node:path'
 
-import { execHook, getDefaultOperator } from '../utils/index.js'
+import { execHook, formatFileSize, getDefaultOperator } from '../utils/index.js'
 import logger from '../utils/logger.js'
 import SSHClient from './ssh.js'
 import Builder from './builder.js'
 import dayjs from 'dayjs'
 import settings from '@/settings.js'
 import { delayer } from '@/utils/delayer.js'
+import NginxHelper from './nginx.js'
+import DockerHelper from './docker.js'
 
 /**
  * 备份
@@ -259,10 +261,9 @@ export async function deploy(client, config, needBackup) {
     try {
       const buildRes = await builder.zip(distPath)
 
+      let zipSize = formatFileSize(buildRes.size)
       logger.info(
-        `压缩项目成功： ${distPath} -> ${outputPkgName} (size：${
-          buildRes.size / 1024
-        }KB)`,
+        `压缩项目成功： ${distPath} -> ${outputPkgName} (size: ${zipSize})`,
         { success: true }
       )
       await execHook('compressAfter', { config, client })
@@ -317,7 +318,7 @@ export async function deploy(client, config, needBackup) {
             loading: true
           }
         )
-        await client.exec(`cp ${remotePath} ${deployPath}`)
+        await client.exec(`mv -f ${remotePath} ${deployPath}`)
 
         logger.info(
           `调整压缩包位置成功: ${remotePath} -> ${deployPath}${outputPkgName}`,
@@ -335,16 +336,18 @@ export async function deploy(client, config, needBackup) {
 
     // 先解压到临时文件夹，防止执行失败导致web无法访问
     let unzipTempFolder = `autodeploy_${deployFolder}_temp`
-    let unzipCmd = `unzip -o ${deployPath + outputPkgName} -d ${
-      deployPath + unzipTempFolder
-    }`
+    let unzipPath =
+      deployPath + unzipTempFolder + (config.deploy.docker ? '/dist' : '')
+    let unzipCmd = `unzip -o ${deployPath + outputPkgName} -d ${unzipPath}`
     let originTempFolder = `${deployFolder}_cache_${
       (Math.random() + 100) * 1000
     }`
+    logger.debug('unzip命令：' + unzipCmd)
 
     try {
       logger.info('解压部署压缩包中...', { loading: true })
 
+      await client.exec(`mkdir -p ${unzipPath}`).catch((err) => false)
       /**
        * 解压到临时文件夹
        */
@@ -355,10 +358,46 @@ export async function deploy(client, config, needBackup) {
        * 3. 删除原始项目的临时文件夹
        */
       await client.exec(
-        `mv -f ${deployPath}${deployFolder} ${deployPath}${originTempFolder};mv -f ${deployPath}${unzipTempFolder} ${deployPath}${deployFolder};rm -rf ${deployPath}${originTempFolder}`
+        `cd ${deployPath}; mv -f ${deployFolder} ${originTempFolder};mv -f ${unzipTempFolder} ${deployFolder};rm -rf ${originTempFolder}`
       )
 
       logger.info('解压部署文件成功', { success: true })
+      if (config.deploy?.docker) {
+        const dockerHelper = new DockerHelper(client, config)
+        try {
+          logger.info('检测到docker配置，构建docker镜像中...', {
+            loading: true
+          })
+
+          if (config.nginx) {
+            const nginxHelper = new NginxHelper(client, config)
+
+            await nginxHelper.generateConf(config.deploy.deployPath)
+          }
+          await dockerHelper.build()
+
+          logger.info(`构建docker镜像成功 -> ${dockerHelper.imageName}`, {
+            success: true
+          })
+        } catch (error) {
+          logger.error('构建docker镜像失败 -> ' + error)
+          return
+        }
+
+        try {
+          logger.info('启动docker镜像中...', {
+            loading: true
+          })
+          await dockerHelper.reload()
+
+          logger.info(`启动docker镜像成功 -> ${dockerHelper.imageName}`, {
+            success: true
+          })
+        } catch (error) {
+          logger.error('启动docker镜像失败 -> ' + error)
+          return
+        }
+      }
 
       await appendRecord(client, {
         success: true,
@@ -368,12 +407,43 @@ export async function deploy(client, config, needBackup) {
     } catch (error) {
       logger.error('解压部署文件失败 -> ' + error)
       await client
-        .exec(
-          `mv -f ${deployPath}${originTempFolder} ${deployPath}${deployFolder}`
-        )
+        .exec(`cd ${deployPath};mv -f ${originTempFolder} ${deployFolder}`)
         .catch((err) => err)
       throw ''
     } finally {
+      if (config.nginx && !config.deploy?.docker) {
+        if (await NginxHelper?.checkConfExist(config)) {
+          logger.warn('Nginx配置文件已存在，跳过自动生成')
+        } else {
+          try {
+            logger.info('生成Nginx配置文件中...', { loading: true })
+
+            const nginxHelper = new NginxHelper(client, config)
+
+            const nginxConfPath = await nginxHelper.generateConf()
+            await nginxHelper.reload()
+
+            logger.info(`生成Nginx配置文件成功 -> ${nginxConfPath}`, {
+              success: true
+            })
+          } catch (error) {
+            logger.error('生成Nginx配置文件失败 -> ' + error)
+          }
+        }
+      }
+
+      try {
+        logger.info('删除上传的部署文件中...', { loading: true })
+
+        await client.exec(`rm -rf ${deployPath}${outputPkgName}`)
+
+        logger.info(`删除上传的部署文件成功 -> ${deployPath}${outputPkgName}`, {
+          success: true
+        })
+      } catch (error) {
+        logger.error('删除上传的部署文件失败 -> ' + error)
+      }
+
       try {
         logger.info('删除上传的部署文件中...', { loading: true })
 
