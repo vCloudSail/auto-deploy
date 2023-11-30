@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import settings from './settings.js'
 import SSHClient from './modules/ssh.js'
 import { backup, deploy, rollback } from './modules/deploy.js'
@@ -8,6 +10,7 @@ import {
 } from './utils/index.js'
 import logger, { addTransport } from './utils/logger.js'
 import { delayer } from './utils/delayer.js'
+import dayjs from 'dayjs'
 
 export { addTransport }
 /**
@@ -16,14 +19,30 @@ export { addTransport }
  * @param {import('index').DeployOptions} options
  */
 export default async function autodeploy(config, options) {
+  const packageResult = fs
+    .readFileSync(path.resolve(process.cwd(), 'package.json'))
+    .toString()
+
+  logger.debug('package.json：' + packageResult)
+
+  settings.projectPackage = JSON.parse(packageResult)
   settings.deployConfig = config
+  settings.deployConfig.projectName = (
+    settings.deployConfig.projectName ||
+    settings.projectPackage.name ||
+    ''
+  ).replace(/\/|\\|:|\*|\?|"|<|>|\|/g, '_')
 
   const startTime = new Date()
 
   if (options.rollback) {
-    logger.info(`版本回退（${config.name || config.env}）`)
+    logger.info(
+      `版本回退 [${config.projectName}] -> (${config.name || config.env})`
+    )
   } else {
-    logger.info(`自动化部署（${config.name || config.env}）`)
+    logger.info(
+      `自动化部署 [${config.projectName}] -> (${config.name || config.env})`
+    )
   }
 
   function logOnExit(code) {

@@ -82,41 +82,59 @@ module.exports = configs
 
 ```
 
-### 参数
+### 配置文件(deploy.config.js)
 
-**注意！！！目前没有做参数校验，所以请按照规范填写参数**
 
-| 名称               | 描述                                              |
-| ------------------ | ------------------------------------------------- |
-| env                | 环境key                                           |
-| name               | 环境名称                                          |
-| server             | 服务器配置                                        |
-| - host             | 主机IP/域名                                       |
-| - port             | ssh端口                                           |
-| - username         | 用户名                                            |
-| - password(可选)   | 密码                                              |
-| agent(可选)        | 跳板机配置（参数与server相同）                    |
-| build              | 构建配置                                          |
-| - script           | 构建命令：npm run $script ，默认script=build      |
-| - cmd(可选)        | 构建命令：$cmd，如何指定为false，则表示不进行构建 |
-| - distPath         | 构建后的输出路径，默认为dist                      |
-| deploy             | 部署配置                                          |
-| - uploadPath(可选) | 部署包上传路径                                    |
-| - deployPath       | 部署路径（不存在会自动创建）                      |
-| - backupPath(可选) | 备份路径（不存在会自动创建）                      |
-| hooks(可选)        | 生命周期钩子                                      |
-| - deployBefore     | 部署之前                                          |
-| - buildBefore      | 构建之前                                          |
-| - buildAfter       | 构建之后                                          |
-| - compressBefore   | 压缩之前                                          |
-| - compressAfter    | 压缩之后                                          |
-| - uploadBefore     | 上传之前                                          |
-| - uploadAfter      | 上传之后                                          |
-| - backupBefore     | 备份之前                                          |
-| - backupAfter      | 备份之后                                          |
-| - deployAfter      | 部署之后                                          |
+| 名称               | 描述                                                                      |
+| ------------------ | ------------------------------------------------------------------------- |
+| env                | 环境key                                                                   |
+| name               | 环境名称                                                                  |
+| server             | 服务器配置                                                                |
+| - host             | 主机IP/域名                                                               |
+| - port             | ssh端口                                                                   |
+| - username         | 用户名                                                                    |
+| - password(可选)   | 密码                                                                      |
+| agent(可选)        | 跳板机配置（参数与server相同）                                            |
+| build              | 构建配置                                                                  |
+| - script           | 构建命令：npm run $script ，默认script=build                              |
+| - cmd(可选)        | 构建命令：$cmd，如何指定为false，则表示不进行构建                         |
+| - distPath         | 构建后的输出路径，默认为dist                                              |
+| deploy             | 部署配置                                                                  |
+| - uploadPath(可选) | 部署包上传路径                                                            |
+| - deployPath       | 部署路径（不存在会自动创建）                                              |
+| - backupPath(可选) | 备份路径（不存在会自动创建）                                              |
+| - docker(可选)     | 部署到docker的配置                                                        |
+| nginx(可选)        | nginx配置，注意：如果是部署到docker中，自动生成的conf则会放入docker容器内 |
+| hooks(可选)        | 生命周期钩子                                                              |
+| - deployBefore     | 部署之前                                                                  |
+| - buildBefore      | 构建之前                                                                  |
+| - buildAfter       | 构建之后                                                                  |
+| - compressBefore   | 压缩之前                                                                  |
+| - compressAfter    | 压缩之后                                                                  |
+| - uploadBefore     | 上传之前                                                                  |
+| - uploadAfter      | 上传之后                                                                  |
+| - backupBefore     | 备份之前                                                                  |
+| - backupAfter      | 备份之后                                                                  |
+| - deployAfter      | 部署之后                                                                  |
 
+**注意事项：**
+- **尽量使用root登录，如果无法使用root，尽量给账号分配操作部署目录的父目录权限，否则有可能因为权限问题导致部署失败**
+- **目前没有做参数校验，所以请按照规范填写参数**
+- **对于使用了跳板机的服务器，由于权限问题，可能无法使用docker部署和自动生成nginx配置功能**
+
+#### 配置优先级
+1. 配置了deploy.docker参数，则表示部署到docker容器中，每次部署目录都会重新构建镜像
+2. 配置了nginx参数，则表示自动生成nginx配置文件
+   - 如果配置了deployu.docker参数，则生成的配置文件会放入容器中，且配置文件名称强制为default.conf
+   - 反之，生成的配置文件会放入ningx安装目录(默认为/etc/nginx)/conf.d中
 ### 使用
+
+支持以下参数，可通过autodeploy --help查看
+- -rb 回退版本号或名称
+- -bak 本次部署是否备份
+- -env 部署环境
+
+#### 基础使用
 
 获取使用帮助
 ```shell
@@ -141,6 +159,12 @@ autodeploy -rb
 autodeploy -rb -1
 ```
 
+#### Docker部署
+配置deploy.docker属性即可实现部署到服务器的docker容器中
+
+需要注意以下几点
+
+#### 自动生成Nginx配置文件
 ## 功能 & 计划
 - [x] 自动化部署
   + [x] 支持动态输入服务器密码，避免将密码放在配置文件中造成泄露 
@@ -158,7 +182,7 @@ autodeploy -rb -1
   - [x] 服务器日志(目前根据当前git仓库作者姓名写入简单的部署日志)
 - [x] 支持非npm、nodejs项目(配置build.cmd参数)
 - [ ] Docker镜像部署
-- [ ] 自动配置Nginx
+- [x] 自动生成Nginx配置文件（当nginx配置文件不存在时）
 
 
 ## 注意事项

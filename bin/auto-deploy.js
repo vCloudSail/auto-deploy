@@ -101,11 +101,12 @@ async function main() {
       fs.readFileSync(path.resolve(basePath, 'deploy.config.js'))
     )
     return
+  } finally {
+    fs.writeFileSync(
+      path.resolve(process.cwd(), 'deploy.config.d.ts'),
+      fs.readFileSync(path.resolve(basePath, 'index.d.ts'))
+    )
   }
-  fs.writeFileSync(
-    path.resolve(process.cwd(), 'deploy.config.d.ts'),
-    fs.readFileSync(path.resolve(basePath, 'index.d.ts'))
-  )
 
   let configs = []
   if (Array.isArray(originConfig)) {

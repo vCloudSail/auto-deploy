@@ -6,9 +6,9 @@ const configs = {
     env: 'dev',
     name: '开发环境',
     server: {
-      host: '192.168.xxx.xxx',
+      host: '192.168.14.211',
       port: '22',
-      username: 'xxx'
+      username: 'root'
       // password: '' // 非必填
     },
     build: {
@@ -17,15 +17,21 @@ const configs = {
       // distPath: 'dist' // 非必填，默认dist
     },
     deploy: {
-      deployPath: '/home/xxx'
+      deployPath: '/home/tichaincloud/web/test',
       // bakupPath: '/home/xxx_backup', // 非必填，默认deployPath+_backup
       // logPath: '/home/xxx_logs', // 非必填，默认deployPath+_logs
+      docker: {
+        hostPort: 18080
+      }
     },
     nginx: {
-      listen: 8080,
-      fileName: package.name,
-      serverName: '127.0.0.1',
-      api: 'http://x.x.x.x/api'
+      listen: 18080,
+      serverName: '192.168.14.211',
+      api: {
+        url: 'http://127.0.0.1:8089/api'
+        // websocket: true,
+        // eventstream: true
+      }
     }
   }
 }
