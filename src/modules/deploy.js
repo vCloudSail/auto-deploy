@@ -248,7 +248,7 @@ export async function deploy(client, config, needBackup) {
         logger.error('构建失败：' + error)
         throw ''
       }
-      logger.info(`构建项目成功： npm run ${buildCmd}`, { success: true })
+      logger.info(`构建项目成功：${buildCmd}`, { success: true })
       await execHook('buildAfter', { config, client })
     } else {
       logger.warn('未配置构建命令，跳过构建')
