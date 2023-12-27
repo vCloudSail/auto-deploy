@@ -84,7 +84,6 @@ module.exports = configs
 
 ### 配置文件(deploy.config.js)
 
-
 | 名称               | 描述                                                                      |
 | ------------------ | ------------------------------------------------------------------------- |
 | env                | 环境key                                                                   |
@@ -123,10 +122,12 @@ module.exports = configs
 - **对于使用了跳板机的服务器，由于权限问题，可能无法使用docker部署和自动生成nginx配置功能**
 
 #### 配置优先级
+
 1. 配置了deploy.docker参数，则表示部署到docker容器中，每次部署目录都会重新构建镜像
 2. 配置了nginx参数，则表示自动生成nginx配置文件
    - 如果配置了deployu.docker参数，则生成的配置文件会放入容器中，且配置文件名称强制为default.conf
    - 反之，生成的配置文件会放入ningx安装目录(默认为/etc/nginx)/conf.d中
+  
 ### 使用
 
 支持以下参数，可通过autodeploy --help查看
@@ -161,10 +162,12 @@ autodeploy -rb -1
 
 #### Docker部署
 配置deploy.docker属性即可实现部署到服务器的docker容器中
-
-需要注意以下几点
+详细参数可参考deploy.config.d.ts
 
 #### 自动生成Nginx配置文件
+配置deploy.nginx属性即可实现自动生成Nginx配置文件
+详细参数可参考deploy.config.d.ts
+
 ## 功能 & 计划
 - [x] 自动化部署
   + [x] 支持动态输入服务器密码，避免将密码放在配置文件中造成泄露 
