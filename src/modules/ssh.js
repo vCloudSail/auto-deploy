@@ -43,6 +43,9 @@ export default class SSHClient {
   cmdUseSudo = false
   /** @type {ssh2.Channel} */
   sudoSuChannel
+  get host() {
+    return this.config.host
+  }
   /**
    *
    * @param {import('index').SSHClientConfig&{agent:import('index').SSHClientConfig}} param

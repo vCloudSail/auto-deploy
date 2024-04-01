@@ -21,29 +21,31 @@ const logger = addTransport(
   new winston.transports.Console({
     format: {
       transform(data) {
+        const msg = (data.host ? `[${data.host}] ` : '') + data.message
+
         if (data.level === 'info') {
           if (data.loading) {
-            spinner.start(data.message)
+            spinner.start(msg)
             return false
           } else if (data.success) {
-            spinner.succeed(data.message)
+            spinner.succeed(msg)
             return false
           }
           spinner.stop()
-          spinner.info(data.message)
+          spinner.info(msg)
         } else {
-          if (!data.message) return false
+          if (!msg) return false
 
           spinner.stop()
           switch (data.level) {
             case 'warn':
-              spinner.warn(data.message)
+              spinner.warn(msg)
               break
             case 'error':
-              spinner.fail(data.message)
+              spinner.fail(msg)
               break
             case 'debug':
-              spinner.info(data.message)
+              spinner.info(msg)
               break
           }
         }
@@ -135,7 +137,7 @@ async function main() {
         choices: configs?.map((item) => {
           return {
             value: item.env,
-            name: `${item.name} - ${item.server?.host}:${item.server?.port}`
+            name: `${item.name}`
           }
         })
       }

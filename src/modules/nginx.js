@@ -89,7 +89,7 @@ export default class NginxHelper {
       `cd ${path}; echo "${this.confContent}" > ${this.fileName}.conf`
     )
 
-    return path + `${this.fileName}.conf`
+    return path + `/${this.fileName}.conf`
   }
   async reload() {
     try {

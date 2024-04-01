@@ -62,22 +62,22 @@ function DeployHookFn<T>(
 
 export interface DeployHooks {
   /** 部署之前 */
-  deployBefore: typeof DeployHookFn
+  deployBefore: { config: DeployConfig }
   /** 构建之前 */
-  buildBefore: typeof DeployHookFn
+  buildBefore: { config: DeployConfig }
   /** 构建之后 */
-  buildAfter: typeof DeployHookFn
+  buildAfter: { config: DeployConfig }
   /** 压缩之前 */
-  compressBefore: typeof DeployHookFn
+  compressBefore: { config: DeployConfig }
   /** 压缩之后 */
-  compressAfter: typeof DeployHookFn
-  /** 上传之前 */
+  compressAfter: { config: DeployConfig }
+  /** 上传之前，如果是多个服务器则会多次触发 */
   uploadBefore: typeof DeployHookFn
-  /** 上传之后 */
+  /** 上传之后，如果是多个服务器则会多次触发 */
   uploadAfter: typeof DeployHookFn
-  /** 备份之前 */
+  /** 备份之前，如果是多个服务器则会多次触发 */
   backupBefore: typeof DeployHookFn
-  /** 备份之后 */
+  /** 备份之后，如果是多个服务器则会多次触发 */
   backupAfter: typeof DeployHookFn
   /** 部署之后 */
   deployAfter: typeof DeployHookFn
