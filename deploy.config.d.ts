@@ -100,9 +100,9 @@ export interface DeployConfig {
   agent: SSHClientConfig
   /** 编译配置 */
   build: {
-    /** (优先级比cmd高)编译命令，实际运行为npm run $script */
+    /** (优先级比cmd高)编译命令，实际运行为：npm run $script */
     script: string
-    /** 编译命令，实际运行为npm run $cmd */
+    /** 编译命令，实际运行为：$cmd */
     cmd: string
     /** 输出文件夹 */
     distPath: string

@@ -61,7 +61,9 @@ export default async function autodeploy(config, options) {
 
     logger.log(
       level,
-      `${action}部署结束，总耗时：${(new Date() - startTime) / 1000}秒 \r\n\r\n`
+      `${action}部署结束，当前时间：${new Date().toLocaleString()}，总耗时：${
+        (new Date() - startTime) / 1000
+      }秒 \r\n\r\n`
     )
   }
 
@@ -285,7 +287,7 @@ export default async function autodeploy(config, options) {
         logger.error('删除本地部署文件失败 -> ' + error)
       }
 
-      finishMsg = `共${servers.length}个服务器部署到${config.name}：${successCount}个成功，${failCount}个失败`
+      finishMsg = `共${servers.length}个服务器部署${config.name}：${successCount}个成功，${failCount}个失败`
     }
 
     if (successCount === servers.length) {
