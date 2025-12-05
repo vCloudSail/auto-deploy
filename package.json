@@ -1,7 +1,7 @@
 {
   "name": "@cloudsail/auto-deploy",
   "private": false,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "一个WEB前端自动化部署cli工具",
   "license": "GPL-3.0",
   "type": "module",

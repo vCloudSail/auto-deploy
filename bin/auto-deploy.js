@@ -75,6 +75,7 @@ program
   .option('-e, --env <env>', '指定目标环境')
   .option('-bak, --backup [backup]', '部署前是否备份当前服务器版本')
   .option('-rb, --rollback [rollback]', '回退到指定版本', 0)
+  .option('--file [file]', '部署指定文件(zip压缩包)')
   .parse(process.argv) // 格式化参数 返回参数的配置
 
 const options = program.opts()
@@ -168,7 +169,7 @@ async function main() {
   }
 
   let config = configs.find((item) => item.env === options.env)
-  if (!config.env) {
+  if (!config?.env) {
     config.env = options.env
   }
 
@@ -180,7 +181,11 @@ async function main() {
   // if (options.rollback === true) {
   //   return
   // }
-  autodeploy(config, { backup: options.backup, rollback: options.rollback })
+  autodeploy(config, {
+    ...options,
+    backup: options.backup,
+    rollback: options.rollback
+  })
 }
 
 main()

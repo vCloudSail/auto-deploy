@@ -402,9 +402,15 @@ export async function deploy(client, config, options = {}) {
             const nginxHelper = new NginxHelper(client, config)
 
             const nginxConfPath = await nginxHelper.generateConf()
-            await nginxHelper.reload()
 
             logger.info(`生成Nginx配置文件成功 -> ${nginxConfPath}`, {
+              host: client.host,
+              success: true
+            })
+
+            await nginxHelper.reload()
+
+            logger.info(`Nginx重新加载配置成功 -> ${nginxConfPath}`, {
               host: client.host,
               success: true
             })

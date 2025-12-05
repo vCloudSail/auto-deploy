@@ -1,4 +1,11 @@
 // #region ssh
+export interface SSHClientProxyConfig {
+  host: string
+  port: number
+  username?: string
+  password?: string
+  type?: 'http' | 'socks4' | 'socks5' | 'telnet'
+}
 export interface SSHClientConfig {
   /** 主机地址 */
   host: string
@@ -12,6 +19,12 @@ export interface SSHClientConfig {
   privateKey?: string
   /** 是否在执行命令前加上sudo前缀，使用了agent时默认为true（针对跳板机或使用非root用户连接） */
   cmdUseSudo?: boolean
+  /**
+   * 代理配置（例如 HTTP 代理）
+   *
+   * 如果配置了 proxy，则会优先通过代理建立到目标主机的连接
+   */
+  proxy?: SSHClientProxyConfig
 }
 
 export interface SSHClient {
@@ -55,6 +68,15 @@ export interface Logger {
 
 // #endregion
 
+// #region 回滚
+export interface RollbackOptions {
+  backupPath: string
+  backupList: any
+  deployPath: string
+  version: string | number
+}
+// #endregion
+
 // #region hooks
 function DeployHookFn<T>(
   options: { config: DeployConfig; client: SSHClient } & T
@@ -62,22 +84,22 @@ function DeployHookFn<T>(
 
 export interface DeployHooks {
   /** 部署之前 */
-  deployBefore: typeof DeployHookFn
+  deployBefore: { config: DeployConfig }
   /** 构建之前 */
-  buildBefore: typeof DeployHookFn
+  buildBefore: { config: DeployConfig }
   /** 构建之后 */
-  buildAfter: typeof DeployHookFn
+  buildAfter: { config: DeployConfig }
   /** 压缩之前 */
-  compressBefore: typeof DeployHookFn
+  compressBefore: { config: DeployConfig }
   /** 压缩之后 */
-  compressAfter: typeof DeployHookFn
-  /** 上传之前 */
+  compressAfter: { config: DeployConfig }
+  /** 上传之前，如果是多个服务器则会多次触发 */
   uploadBefore: typeof DeployHookFn
-  /** 上传之后 */
+  /** 上传之后，如果是多个服务器则会多次触发 */
   uploadAfter: typeof DeployHookFn
-  /** 备份之前 */
+  /** 备份之前，如果是多个服务器则会多次触发 */
   backupBefore: typeof DeployHookFn
-  /** 备份之后 */
+  /** 备份之后，如果是多个服务器则会多次触发 */
   backupAfter: typeof DeployHookFn
   /** 部署之后 */
   deployAfter: typeof DeployHookFn
@@ -97,7 +119,13 @@ export interface DeployConfig {
   /** 服务器配置 */
   server: SSHClientConfig
   /** 跳板机配置 */
-  agent: SSHClientConfig
+  agent?: SSHClientConfig
+  /**
+   * 代理配置（例如 HTTP 代理）
+   *
+   * 如果配置了 proxy，则会优先通过代理建立到目标主机的连接
+   */
+  proxy?: SSHClientProxyConfig
   /** 编译配置 */
   build: {
     /** (优先级比cmd高)编译命令，实际运行为npm run $script */
@@ -173,6 +201,8 @@ export interface DeployOptions {
   backup: boolean
   /** 是否恢复历史版本，如果是Number类型则表示还原上几个版本 */
   rollback: boolean | number | string
+  /** 文件路径，传了就表示部署指定文件 */
+  file?: string
 }
 
 // export interface DeployRunningPromptDataMap {

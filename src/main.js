@@ -22,8 +22,9 @@ export { addTransport }
  * @param {import('index').DeployOptions} options
  */
 export default async function autodeploy(config, options) {
+  const rootPath = process.cwd()
   const packageResult = fs
-    .readFileSync(path.resolve(process.cwd(), 'package.json'))
+    .readFileSync(path.resolve(rootPath, 'package.json'))
     .toString()
 
   logger.debug('package.json：' + packageResult)
@@ -105,7 +106,7 @@ export default async function autodeploy(config, options) {
         backupList
       for (let server of servers) {
         const sshClient = new SSHClient(
-          { ...server, agent: config.agent },
+          { ...server, agent: config.agent, proxy: config.proxy },
           config
         )
         try {
@@ -183,50 +184,71 @@ export default async function autodeploy(config, options) {
             ? `\r\n    - 备份路径: ${config.deploy.backupPath}`
             : '')
       )
+
       // #region 构建/打包项目
+      let outputPkgName = ''
+      let builder
 
-      /** 打包压缩后的输出文件名 */
-      const builder = new Builder(config.env)
+      logger.debug('options.file  ' + options.file)
+      // if (options.file) {
+      //   try {
+      //     if (path.isAbsolute(options.file)) {
+      //       options.file = path.resolve(options.file)
+      //     } else {
+      //       options.file = path.resolve(rootPath, options.file)
+      //     }
+      //   } catch (error) {
+      //     options.file = ''
+      //   }
+      // }
 
-      let outputPkgName = builder.outputPkgName
-      const distPath = config.build?.distPath || 'dist'
+      if (options.file && fs.existsSync(options.file)) {
+        logger.info(`传入了部署文件名称，将跳过打包`)
+        outputPkgName = options.file
+      } else {
+        /** 打包压缩后的输出文件名 */
+        builder = new Builder(config.env)
 
-      const buildCmd =
-        config.build?.cmd != null
-          ? config.build?.cmd
-          : `npm run ${config.build?.script || 'build'}`
+        outputPkgName = builder.outputPkgName
+        const distPath = config.build?.distPath || 'dist'
 
-      if (buildCmd) {
-        logger.info(`构建项目中：${buildCmd}`, { loading: true })
-        await execHook('buildBefore', { config })
+        const buildCmd =
+          config.build?.cmd != null
+            ? config.build?.cmd
+            : `npm run ${config.build?.script || 'build'}`
+
+        if (buildCmd) {
+          logger.info(`构建项目中：${buildCmd}`, { loading: true })
+          await execHook('buildBefore', { config })
+          try {
+            await builder.build(buildCmd)
+          } catch (error) {
+            logger.error('构建失败：' + error)
+            throw ''
+          }
+          logger.info(`构建项目成功：${buildCmd}`, { success: true })
+          await execHook('buildAfter', { config })
+        } else {
+          logger.warn('未配置构建命令，跳过构建')
+        }
+
+        await execHook('compressBefore', { config })
+        logger.info(`压缩项目中：${distPath} -> ${outputPkgName}`, {
+          loading: true
+        })
         try {
-          await builder.build(buildCmd)
+          const buildRes = await builder.zip(distPath)
+
+          let zipSize = formatFileSize(buildRes.size)
+          logger.info(
+            `压缩项目成功： ${distPath} -> ${outputPkgName} (size: ${zipSize})`,
+            { success: true }
+          )
+          await execHook('compressAfter', { config })
         } catch (error) {
-          logger.error('构建失败：' + error)
+          logger.error('压缩失败 ->' + error)
           throw ''
         }
-        logger.info(`构建项目成功：${buildCmd}`, { success: true })
-        await execHook('buildAfter', { config })
-      } else {
-        logger.warn('未配置构建命令，跳过构建')
-      }
-
-      await execHook('compressBefore', { config })
-      logger.info(`压缩项目中：${distPath} -> ${outputPkgName}`, {
-        loading: true
-      })
-      try {
-        const buildRes = await builder.zip(distPath)
-
-        let zipSize = formatFileSize(buildRes.size)
-        logger.info(
-          `压缩项目成功： ${distPath} -> ${outputPkgName} (size: ${zipSize})`,
-          { success: true }
-        )
-        await execHook('compressAfter', { config })
-      } catch (error) {
-        logger.error('压缩失败 ->' + error)
-        throw ''
       }
       // #endregion
 
@@ -235,7 +257,7 @@ export default async function autodeploy(config, options) {
       const backupName = `bak_${dayjs().format('YYYYMMDD_HH_mm_ss')}`
       for (let server of servers) {
         const sshClient = new SSHClient(
-          { ...server, agent: config.agent },
+          { ...server, agent: config.agent, proxy: config.proxy },
           config
         )
         try {
@@ -278,7 +300,7 @@ export default async function autodeploy(config, options) {
       try {
         logger.info('删除本地部署文件中', { loading: true })
 
-        await builder.deleteZip()
+        await builder?.deleteZip()
 
         logger.info(`删除本地部署文件成功 -> ${outputPkgName}`, {
           success: true
@@ -302,9 +324,9 @@ export default async function autodeploy(config, options) {
 
     await delayer(1)
 
-    process.exit(1)
+    process.exit(0)
   } catch (error) {
     logger.error((error || '') + '')
-    process.exit(0)
+    process.exit(1)
   }
 }

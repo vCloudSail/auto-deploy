@@ -33,6 +33,32 @@ const configs = {
         // eventstream: true
       }
     }
+  },
+  prod1: {
+    env: 'prod',
+    name: '线上环境',
+    proxy: {
+      host: '192.168.15.77',
+      port: 7890,
+      type: 'socks5'
+    },
+    server: [
+      {
+        host: '121.37.2.208',
+        port: '22',
+        username: 'root'
+      }
+    ],
+    build: {
+      // script: 'build:prod' // script参数会自动在前面拼接npm run
+      cmd: '' , // 如果配置cmd参数，则要写前缀
+      // distPath: 'dist' // 非必填，默认dist
+    },
+    deploy: {
+      deployPath: '/data/apps/web/testtt'
+      // bakupPath: '/home/xxx_backup', // 非必填，默认deployPath+_backup
+      // logPath: '/home/xxx_logs', // 非必填，默认deployPath+_logs
+    }
   }
 }
 

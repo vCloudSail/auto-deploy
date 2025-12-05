@@ -1,3 +1,4 @@
+import { delayer } from '@/utils/delayer'
 import logger from '@/utils/logger'
 
 export default class NginxHelper {
@@ -94,6 +95,7 @@ export default class NginxHelper {
   async reload() {
     try {
       await this.client.exec('nginx -t')
+      await delayer(1000)
       await this.client.exec('nginx -s reload')
       return true
     } catch (error) {

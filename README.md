@@ -94,6 +94,12 @@ module.exports = configs
 | - username         | 用户名                                                                    |
 | - password(可选)   | 密码                                                                      |
 | agent(可选)        | 跳板机配置（参数与server相同）                                            |
+| proxy(可选)        | 代理配置                                            |
+| - host             | 代理服务器地址                                                            |
+| - port             | 代理服务器端口                                                            |
+| - username(可选)   | 代理用户名（HTTP Basic Auth 或 SOCKS5 用户名密码认证）                   |
+| - password(可选)   | 代理密码（HTTP Basic Auth 或 SOCKS5 用户名密码认证）                     |
+| - type(可选)       | 代理类型，支持 http / socks4 / socks5 / telnet，默认 http                |
 | build              | 构建配置                                                                  |
 | - script           | 构建命令：npm run $script ，默认script=build                              |
 | - cmd(可选)        | 构建命令：$cmd，如何指定为false，则表示不进行构建                         |
@@ -177,6 +183,7 @@ autodeploy -rb -1
   + [x] 备份功能
     * [x] 部署时提供命令行列表选项
   + [x] 支持通过跳板机、私钥连接服务器部署、备份
+  + [x] 支持通过代理服务器连接目标服务器
 - [x] 版本回退
   + [x] 支持指定回退到上几个版本
   + [x] 当没有指定回退版本时，为用户提供备份列表选项，用户可选择指定版本回退

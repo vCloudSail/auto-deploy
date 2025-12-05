@@ -3,6 +3,7 @@ import fs from 'node:fs'
 
 import archiver from 'archiver'
 import { exec } from 'child-process-promise'
+// import { uniqueId } from 'lodash'
 
 /**
  * 构建器
@@ -12,10 +13,14 @@ export default class Builder {
    * @type {string}
    */
   env
+  /**
+   * @type {string}
+   */
   outputFullPath
-  get outputPkgName() {
-    return `auto-deploy-${this.env}.zip`
-  }
+  /**
+   * @type {string}
+   */
+  outputPkgName
 
   constructor(env) {
     if (!env) {
@@ -23,6 +28,7 @@ export default class Builder {
     }
 
     this.env = env
+    this.outputPkgName = `auto-deploy-${this.env}_${Date.now()}.zip`
   }
 
   /**

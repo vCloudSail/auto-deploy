@@ -1,5 +1,6 @@
 import ssh2 from 'ssh2'
 import fs from 'node:fs'
+import net from 'node:net'
 
 import logger from '../utils/logger.js'
 import { PasswordCacher } from '../utils/cacher.js'
@@ -59,6 +60,7 @@ export default class SSHClient {
       password,
       privateKey,
       agent,
+      proxy,
       debug,
       cmdUseSudo
     } = {},
@@ -70,7 +72,8 @@ export default class SSHClient {
       port,
       username,
       password,
-      privateKey
+      privateKey,
+      proxy
     }
     this.debug = debug
 
@@ -105,6 +108,39 @@ export default class SSHClient {
         throw new Error('未知的client')
       }
       config = await this.#checkConfig(config)
+
+      if (config.proxy && !config.sock) {
+        logger.info(
+          `[SSHClient] 使用代理连接中 -> ${config.proxy.type || 'http'}://${
+            config.proxy.host
+          }:${config.proxy.port}`,
+          { loading: true }
+        )
+        try {
+          const targetPort = Number(config.port) || 22
+          const sock = await this.#createProxySocket(
+            config.host,
+            targetPort,
+            config.proxy
+          )
+          config = {
+            ...config,
+            sock,
+            // 通过 sock 连接时，ssh2 不再需要 host/port
+            host: undefined,
+            port: undefined
+          }
+          logger.info(
+            `[SSHClient] 通过代理建立到 ${client === this.clientAgent ? '跳板机' : '服务器'} 的连接成功`,
+            { success: true }
+          )
+        } catch (err) {
+          logger.error(
+            `[SSHClient] 通过代理连接失败，请检查代理配置： ${err + ''}`
+          )
+          return reject(err)
+        }
+      }
 
       const callback = () => {
         client.off('error', onError)
@@ -157,6 +193,395 @@ export default class SSHClient {
         //   // console.log(chalk.red('[SSHClient]: 目标SSH连接关闭！'))
         // })
         .connect(config)
+    })
+  }
+
+  /**
+   * 通过代理创建到目标主机的 Socket
+   * @param {string} host
+   * @param {number} port
+   * @param {{ host:string; port:number; username?:string; password?:string; type?:'http'|'socks4'|'socks5'|'telnet' }} proxy
+   * @returns {Promise<import('net').Socket>}
+   */
+  #createProxySocket(host, port, proxy) {
+    return new Promise((resolve, reject) => {
+      const proxyType = proxy.type || 'http'
+
+      if (proxyType === 'http') {
+        const socket = net.connect(proxy.port, proxy.host)
+
+        const onError = (err) => {
+          socket.destroy()
+          reject(err)
+        }
+
+        socket.once('error', onError)
+
+        socket.once('connect', () => {
+          let authHeader = ''
+          if (proxy.username && proxy.password) {
+            const token = Buffer.from(
+              `${proxy.username}:${proxy.password}`
+            ).toString('base64')
+            authHeader = `Proxy-Authorization: Basic ${token}\r\n`
+          }
+
+          const request =
+            `CONNECT ${host}:${port} HTTP/1.1\r\n` +
+            `Host: ${host}:${port}\r\n` +
+            authHeader +
+            `Connection: keep-alive\r\n` +
+            `\r\n`
+
+          socket.write(request)
+        })
+
+        let responseBuffer = ''
+
+        const onData = (chunk) => {
+          responseBuffer += chunk.toString()
+          if (responseBuffer.includes('\r\n\r\n')) {
+            const firstLine = responseBuffer.split('\r\n')[0]
+            const match = firstLine.match(/HTTP\/1\.[01]\s+(\d{3})/)
+            const statusCode = match ? Number(match[1]) : 0
+
+            socket.removeListener('error', onError)
+            socket.removeListener('data', onData)
+
+            if (statusCode !== 200) {
+              socket.destroy()
+              reject(
+                new Error(
+                  `[SSHClient] 代理连接失败: ${firstLine || '未知错误'}`
+                )
+              )
+            } else {
+              resolve(socket)
+            }
+          }
+        }
+
+        socket.on('data', onData)
+        return
+      }
+
+      if (proxyType === 'socks5') {
+        const socket = net.connect(proxy.port, proxy.host)
+
+        const onError = (err) => {
+          socket.destroy()
+          reject(err)
+        }
+
+        socket.once('error', onError)
+
+        socket.once('connect', () => {
+          /** RFC1928 握手：VER=0x05, NMETHODS, METHODS... */
+          const methods = []
+          // 0x00: 不需要认证, 0x02: 用户名密码认证
+          methods.push(0x00)
+          if (proxy.username && proxy.password) {
+            methods.push(0x02)
+          }
+
+          const buf = Buffer.alloc(2 + methods.length)
+          buf[0] = 0x05
+          buf[1] = methods.length
+          for (let i = 0; i < methods.length; i++) {
+            buf[2 + i] = methods[i]
+          }
+          socket.write(buf)
+        })
+
+        let stage = 0
+        let chunks = []
+
+        const onData = (chunk) => {
+          chunks.push(chunk)
+          const data = Buffer.concat(chunks)
+
+          // stage 0: 认证方式协商
+          if (stage === 0) {
+            if (data.length < 2) return
+            const ver = data[0]
+            const method = data[1]
+            if (ver !== 0x05) {
+              socket.destroy()
+              reject(new Error('[SSHClient] SOCKS5 版本错误'))
+              return
+            }
+            chunks = []
+
+            if (method === 0x00) {
+              // 不需要认证，直接发送 CONNECT 请求
+              stage = 2
+              sendConnect()
+            } else if (method === 0x02) {
+              // 用户名密码认证
+              if (!proxy.username || !proxy.password) {
+                socket.destroy()
+                reject(
+                  new Error(
+                    '[SSHClient] SOCKS5 代理要求用户名密码认证，但未配置用户名或密码'
+                  )
+                )
+                return
+              }
+              stage = 1
+              sendAuth()
+            } else {
+              socket.destroy()
+              reject(
+                new Error(
+                  `[SSHClient] SOCKS5 不支持的认证方式: 0x${method.toString(16)}`
+                )
+              )
+            }
+            return
+          }
+
+          // stage 1: 用户名密码认证结果
+          if (stage === 1) {
+            if (data.length < 2) return
+            const ver = data[0]
+            const status = data[1]
+            if (ver !== 0x01 || status !== 0x00) {
+              socket.destroy()
+              reject(new Error('[SSHClient] SOCKS5 用户名密码认证失败'))
+              return
+            }
+            chunks = []
+            stage = 2
+            sendConnect()
+            return
+          }
+
+          // stage 2: CONNECT 响应
+          if (stage === 2) {
+            if (data.length < 5) return
+            const ver = data[0]
+            const rep = data[1]
+            const atyp = data[3]
+            if (ver !== 0x05) {
+              socket.destroy()
+              reject(new Error('[SSHClient] SOCKS5 响应版本错误'))
+              return
+            }
+            if (rep !== 0x00) {
+              socket.destroy()
+              reject(
+                new Error(
+                  `[SSHClient] SOCKS5 连接目标失败，错误码: 0x${rep.toString(16)}`
+                )
+              )
+              return
+            }
+
+            let addrLen = 0
+            if (atyp === 0x01) {
+              // IPv4
+              addrLen = 4
+            } else if (atyp === 0x03) {
+              // 域名
+              addrLen = data[4]
+            } else if (atyp === 0x04) {
+              // IPv6
+              addrLen = 16
+            } else {
+              socket.destroy()
+              reject(
+                new Error(
+                  `[SSHClient] SOCKS5 不支持的 ATYP: 0x${atyp.toString(16)}`
+                )
+              )
+              return
+            }
+
+            const replyLen = 4 + (atyp === 0x03 ? 1 : 0) + addrLen + 2
+            if (data.length < replyLen) return
+
+            socket.removeListener('error', onError)
+            socket.removeListener('data', onData)
+            resolve(socket)
+          }
+        }
+
+        const sendAuth = () => {
+          const u = Buffer.from(proxy.username || '')
+          const p = Buffer.from(proxy.password || '')
+          const buf = Buffer.alloc(3 + u.length + p.length)
+          buf[0] = 0x01 // VER
+          buf[1] = u.length
+          u.copy(buf, 2)
+          buf[2 + u.length] = p.length
+          p.copy(buf, 3 + u.length)
+          socket.write(buf)
+        }
+
+        const sendConnect = () => {
+          const hostBuf = Buffer.from(host)
+          const buf = Buffer.alloc(4 + 1 + hostBuf.length + 2)
+          buf[0] = 0x05 // VER
+          buf[1] = 0x01 // CMD = CONNECT
+          buf[2] = 0x00 // RSV
+          buf[3] = 0x03 // ATYP = 域名
+          buf[4] = hostBuf.length
+          hostBuf.copy(buf, 5)
+          buf.writeUInt16BE(port, 5 + hostBuf.length)
+          socket.write(buf)
+        }
+
+        socket.on('data', onData)
+        return
+      }
+
+      if (proxyType === 'socks4') {
+        const socket = net.connect(proxy.port, proxy.host)
+
+        const onError = (err) => {
+          socket.destroy()
+          reject(err)
+        }
+
+        socket.once('error', onError)
+
+        socket.once('connect', () => {
+          // SOCKS4 协议：VER(1) + CMD(1) + PORT(2) + IP(4) + USERID(变长，以\0结尾)
+          // CMD: 0x01 = CONNECT
+          // 将域名解析为 IP（SOCKS4 不支持域名，需要先解析）
+          // 注意：这里简化处理，假设 host 是 IP 地址
+          // 如果是域名，需要先进行 DNS 解析，或者使用 SOCKS4a 扩展
+          const ipParts = host.split('.')
+          if (ipParts.length !== 4) {
+            socket.destroy()
+            reject(
+              new Error(
+                '[SSHClient] SOCKS4 代理不支持域名，请使用 IP 地址或使用 SOCKS4a'
+              )
+            )
+            return
+          }
+
+          const ip = Buffer.alloc(4)
+          for (let i = 0; i < 4; i++) {
+            ip[i] = parseInt(ipParts[i], 10)
+          }
+
+          const userId = proxy.username || ''
+          const userIdBuf = Buffer.from(userId, 'utf8')
+          const buf = Buffer.alloc(8 + userIdBuf.length + 1)
+          buf[0] = 0x04 // VER = SOCKS4
+          buf[1] = 0x01 // CMD = CONNECT
+          buf.writeUInt16BE(port, 2) // PORT
+          ip.copy(buf, 4) // IP
+          userIdBuf.copy(buf, 8) // USERID
+          buf[8 + userIdBuf.length] = 0x00 // NULL terminator
+          socket.write(buf)
+        })
+
+        const onData = (chunk) => {
+          if (chunk.length < 8) return
+
+          const nullByte = chunk[0]
+          const status = chunk[1]
+
+          socket.removeListener('error', onError)
+          socket.removeListener('data', onData)
+
+          if (nullByte !== 0x00) {
+            socket.destroy()
+            reject(new Error('[SSHClient] SOCKS4 响应格式错误'))
+            return
+          }
+
+          if (status !== 0x5a) {
+            // 0x5a = 请求被授予
+            let errorMsg = '[SSHClient] SOCKS4 连接失败'
+            switch (status) {
+              case 0x5b:
+                errorMsg = '[SSHClient] SOCKS4 连接被拒绝'
+                break
+              case 0x5c:
+                errorMsg = '[SSHClient] SOCKS4 连接失败：无法到达目标主机'
+                break
+              case 0x5d:
+                errorMsg = '[SSHClient] SOCKS4 连接失败：用户ID不匹配'
+                break
+            }
+            socket.destroy()
+            reject(new Error(errorMsg))
+            return
+          }
+
+          resolve(socket)
+        }
+
+        socket.on('data', onData)
+        return
+      }
+
+      if (proxyType === 'telnet') {
+        // telnet 代理：通过 telnet 协议连接到代理服务器
+        // 注意：telnet 不是标准代理协议，这里实现为连接到代理服务器后，
+        // 通过 telnet 协议发送目标主机信息，然后代理服务器转发连接
+        const socket = net.connect(proxy.port, proxy.host)
+
+        const onError = (err) => {
+          socket.destroy()
+          reject(err)
+        }
+
+        socket.once('error', onError)
+
+        socket.once('connect', () => {
+          // 通过 telnet 协议发送目标主机和端口信息
+          // 格式：CONNECT host:port\r\n
+          const connectCmd = `CONNECT ${host}:${port}\r\n`
+          socket.write(connectCmd)
+
+          // 等待代理服务器响应（简单的实现，假设连接成功）
+          // 实际应用中，可能需要解析 telnet 响应
+          const onData = (chunk) => {
+            const response = chunk.toString()
+            // 简单的成功判断：如果收到响应，认为连接已建立
+            // 实际应用中可能需要更严格的协议解析
+            if (response.includes('200') || response.includes('OK')) {
+              socket.removeListener('error', onError)
+              socket.removeListener('data', onData)
+              resolve(socket)
+            } else if (
+              response.includes('ERROR') ||
+              response.includes('FAIL') ||
+              response.includes('400') ||
+              response.includes('500')
+            ) {
+              socket.destroy()
+              reject(
+                new Error(
+                  `[SSHClient] Telnet 代理连接失败: ${response.trim()}`
+                )
+              )
+            }
+            // 如果没有明确的成功/失败标识，等待一段时间后认为连接成功
+            // 这是一个简化的实现
+          }
+
+          // 设置超时，如果一定时间内没有响应，认为连接成功（简化处理）
+          setTimeout(() => {
+            if (socket.readable && socket.writable) {
+              socket.removeListener('error', onError)
+              socket.removeListener('data', onData)
+              resolve(socket)
+            }
+          }, 1000)
+
+          socket.on('data', onData)
+        })
+
+        return
+      }
+
+      reject(new Error(`[SSHClient] 暂不支持的代理类型: ${proxyType}`))
     })
   }
 

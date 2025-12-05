@@ -1,4 +1,11 @@
 // #region ssh
+export interface SSHClientProxyConfig {
+  host: string
+  port: number
+  username?: string
+  password?: string
+  type?: 'http' | 'socks4' | 'socks5' | 'telnet'
+}
 export interface SSHClientConfig {
   /** 主机地址 */
   host: string
@@ -12,6 +19,12 @@ export interface SSHClientConfig {
   privateKey?: string
   /** 是否在执行命令前加上sudo前缀，使用了agent时默认为true（针对跳板机或使用非root用户连接） */
   cmdUseSudo?: boolean
+  /**
+   * 代理配置（例如 HTTP 代理）
+   *
+   * 如果配置了 proxy，则会优先通过代理建立到目标主机的连接
+   */
+  proxy?: SSHClientProxyConfig
 }
 
 export interface SSHClient {
@@ -106,7 +119,13 @@ export interface DeployConfig {
   /** 服务器配置 */
   server: SSHClientConfig
   /** 跳板机配置 */
-  agent: SSHClientConfig
+  agent?: SSHClientConfig
+  /**
+   * 代理配置（例如 HTTP 代理）
+   *
+   * 如果配置了 proxy，则会优先通过代理建立到目标主机的连接
+   */
+  proxy?: SSHClientProxyConfig
   /** 编译配置 */
   build: {
     /** (优先级比cmd高)编译命令，实际运行为npm run $script */
@@ -182,6 +201,8 @@ export interface DeployOptions {
   backup: boolean
   /** 是否恢复历史版本，如果是Number类型则表示还原上几个版本 */
   rollback: boolean | number | string
+  /** 文件路径，传了就表示部署指定文件 */
+  file?: string
 }
 
 // export interface DeployRunningPromptDataMap {
