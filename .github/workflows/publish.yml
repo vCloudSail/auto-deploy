@@ -10,19 +10,23 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
 
-      - name: Upgrade npm (Trusted Publishing requires npm >= 11.5.1)
-        run: npm install -g npm@latest
+      - name: Check npm version
+        run: npm --version
 
       - name: Install dependencies
         run: npm install
@@ -38,4 +42,4 @@ jobs:
           fi
 
       - name: Publish to npm
-        run: npm publish --access public --provenance
+        run: npx -y npm@11.14.1 publish --access public --provenance
