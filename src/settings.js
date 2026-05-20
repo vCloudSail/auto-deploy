@@ -9,7 +9,7 @@ const settings = {
   deployConfig: null,
   /**
    */
-  projectPackage: null
+  packageInfo: null
 }
 
 export default settings

@@ -80,6 +80,17 @@ program
 
 const options = program.opts()
 
+function initConfig() {
+  fs.writeFileSync(
+    path.resolve(process.cwd(), 'deploy.config.cjs'),
+    fs.readFileSync(path.resolve(basePath, 'deploy.config.cjs'))
+  )
+  fs.writeFileSync(
+    path.resolve(process.cwd(), 'deploy.config.d.ts'),
+    fs.readFileSync(path.resolve(basePath, 'index.d.ts'))
+  )
+}
+
 async function main() {
   process.$debug = !!options.debug
 
@@ -93,16 +104,27 @@ async function main() {
   logger.debug('当前文件目录：' + import.meta.url)
 
   try {
+    // 先尝试直接加载执行路径下的配置文件
+    const configPath = path.resolve(process.cwd(), 'deploy.config.cjs')
+    logger.debug('配置文件路径：' + configPath)
+
+    if (
+      !fs.existsSync(configPath) &&
+      fs.existsSync(path.resolve(process.cwd(), 'package.json'))
+    ) {
+      throw new Error('不存在配置文件，将创建默认配置文件')
+    }
+
+    // 如果执行路径下存在配置文件，直接加载
     const searchResult = await explorer.search(process.cwd())
+    logger.debug('从执行路径加载配置文件：' + configPath)
 
     originConfig = searchResult.config
   } catch (error) {
+    logger.debug('加载配置文件出错：' + error)
     spinner.warn('不存在配置文件，将创建默认配置文件')
 
-    fs.writeFileSync(
-      path.resolve(process.cwd(), 'deploy.config.js'),
-      fs.readFileSync(path.resolve(basePath, 'deploy.config.js'))
-    )
+    initConfig()
     return
   } finally {
     fs.writeFileSync(

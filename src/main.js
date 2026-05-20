@@ -23,17 +23,17 @@ export { addTransport }
  */
 export default async function autodeploy(config, options) {
   const rootPath = process.cwd()
-  const packageResult = fs
+  const packageInfo = fs
     .readFileSync(path.resolve(rootPath, 'package.json'))
     .toString()
 
-  logger.debug('package.json：' + packageResult)
+  logger.debug('package.json：' + packageInfo)
 
-  settings.projectPackage = JSON.parse(packageResult)
+  settings.packageInfo = JSON.parse(packageInfo)
   settings.deployConfig = config
   settings.deployConfig.projectName = (
     settings.deployConfig.projectName ||
-    settings.projectPackage.name ||
+    settings.packageInfo.name ||
     ''
   ).replace(/\/|\\|:|\*|\?|"|<|>|\|/g, '_')
 

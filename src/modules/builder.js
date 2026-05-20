@@ -3,8 +3,9 @@ import fs from 'node:fs'
 
 import archiver from 'archiver'
 import { exec } from 'child-process-promise'
+import settings from '../settings.js'
 // import { uniqueId } from 'lodash'
-
+settings
 /**
  * 构建器
  */
@@ -28,7 +29,7 @@ export default class Builder {
     }
 
     this.env = env
-    this.outputPkgName = `auto-deploy-${this.env}_${Date.now()}.zip`
+    this.outputPkgName = `auto-deploy[${settings.deployConfig.projectName}]_${this.env}_${Date.now()}.zip`
   }
 
   /**

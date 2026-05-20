@@ -1,9 +1,38 @@
-# v1.2.1
+# v1.2.2
+
+**变更**
+- 默认配置文件由 `deploy.config.js` 改为 `deploy.config.cjs`，避免在 `"type": "module"` 项目中因 `.js` 被当作 ESM 导致 `require` 无法加载配置
+
 **新增**
-- 支持 SSH 连接使用代理
+- 首次运行自动生成 `deploy.config.cjs` 与 `deploy.config.d.ts`（类型提示，内容来自包内 `index.d.ts`）
 
 **优化**
-- 优化代理连接相关日志信息
+- 改进配置文件缺失时的检测：项目根目录存在 `package.json` 但无 `deploy.config.cjs` 时，自动创建默认配置
+- 升级 `cosmiconfig` 至 v9
+- 构建产物 zip 命名包含项目名：`auto-deploy[项目名]_环境_时间戳.zip`
+- 内部 `settings.projectPackage` 重命名为 `packageInfo`
+
+
+# v1.2.1
+**新增**
+- 支持 SSH 连接使用代理（HTTP / SOCKS4 / SOCKS5 / Telnet），可在环境配置中通过 `proxy` 指定
+- 支持 `--file` 参数，传入已有 zip 时跳过构建与压缩，直接部署
+- 类型定义补充 `SSHClientProxyConfig`、`DeployConfig.proxy`，`DeployOptions.file`；`agent` 改为可选
+
+**优化**
+- 优化代理连接相关日志信息（连接过程、类型与地址）
+- 构建产物 zip 文件名增加时间戳，避免多次部署互相覆盖
+- Nginx 生成配置与 reload 分步输出日志；reload 前增加短暂延迟，降低配置未就绪即重载的风险
+- 部署结束日志增加当前时间；多机部署结果文案调整
+- CLI 将 `backup`、`rollback`、`file` 等选项完整传入部署逻辑
+- README 补充 `proxy` 配置说明；demo 增加代理配置示例
+
+**修复**
+- 修正进程退出码：部署成功退出 `0`，失败退出 `1`（此前相反）
+- 修复未匹配到环境配置时 `config.env` 可能报错的问题（`config?.env`）
+
+**变更**
+- 包内移除根目录 `deploy.config.d.ts`，类型定义统一维护在 `index.d.ts`；运行时仍会将最新类型同步到用户项目的 `deploy.config.d.ts`
 
 
 # v1.2.0

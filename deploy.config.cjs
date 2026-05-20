@@ -1,4 +1,4 @@
-const package = require('./package.json')
+const pkg = require('./package.json')
 
 /** @type {import('./deploy.config').DeployConfigMap} */
 const configs = {
@@ -23,7 +23,7 @@ const configs = {
     },
     nginx: {
       listen: 8080,
-      fileName: package.name,
+      fileName: 'test',
       serverName: '127.0.0.1',
       api: 'http://x.x.x.x/api'
     }
