@@ -8,7 +8,7 @@
   "files": [
     "bin",
     "dist",
-    "deploy.config.js",
+    "deploy.config.cjs",
     "index.d.ts"
   ],
   "main": "./dist/index.umd.cjs",
@@ -31,7 +31,8 @@
     "prepublishOnly": "npm run build"
   },
   "publishConfig": {
-    "registry": "https://registry.npmjs.org"
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
   },
   "dependencies": {
     "archiver": "5.3.1",
