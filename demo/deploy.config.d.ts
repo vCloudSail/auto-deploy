@@ -151,19 +151,47 @@ export interface DeployConfig {
     backupPath: string
     /** 备份路径，默认为deployPath_logs */
     logPath: string
-    /**
-     * docker镜像构建配置
-     *
-     * 1. Dockerfile放在项目根目录下(.dockerfile)，如果不存在则自动生成
-     * 2.
-     */
-    docker: {
-      /** 镜像名称，默认取projectName */
-      name: string
-      /** 主机端口，如果配置了nginx，可以不传此参数 */
-      hostPort: string | number
-      /** 启动镜像额外参数 */
-      startArgs: string
+    /** Docker 镜像构建与容器部署配置 */
+    docker?: {
+      /** 镜像：构建、tag、Dockerfile 等 */
+      image?: {
+        /** 镜像仓库名（不含 tag） */
+        name?: string
+        /** 镜像 tag，未配置时部署过程自动生成时间戳 */
+        tag?: string
+        /** local: 本机构建并上传镜像 tar；remote: 在服务器构建（默认） */
+        buildMode?: 'local' | 'remote'
+        /** mount: 挂载宿主机 dist；embed: 将 dist COPY 进镜像 */
+        distMode?: 'mount' | 'embed'
+        /** 项目内 Dockerfile 路径（相对项目根），存在则优先于内置模板 */
+        dockerfile?: string
+        /** 内置模板使用的基础镜像，默认 nginx:latest */
+        baseImage?: string
+        /** buildMode 为 local 时，镜像 tar 在服务器上的存放目录，默认 deployPath */
+        tarDir?: string
+      }
+      /** 容器：运行与端口（单容器 docker run 时生效；compose 模式以 yml 为准） */
+      container?: {
+        /** 容器名称，默认 {image.name}_container */
+        name?: string
+        /** 宿主机映射端口；未配置时可使用 nginx.listen */
+        hostPort?: string | number
+        /** 容器内监听端口，默认 8080 */
+        port?: number
+        /** docker run 额外参数 */
+        startArgs?: string
+      }
+      compose?: {
+        mode?: 'managed' | 'remote'
+        file?: string
+        workDir?: string
+        projectName?: string
+        service?: string
+        forceRecreate?: boolean
+        env?: Record<string, string>
+        envFile?: string
+        syncComposeFile?: boolean
+      }
     }
   }
   hooks: DeployHooks

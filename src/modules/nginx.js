@@ -67,6 +67,10 @@ export default class NginxHelper {
 }`
     return confContent
   }
+  /** 写入文件用的 nginx 配置（去掉 echo 转义） */
+  get confContentForFile() {
+    return this.confContent.replace(/\\\$/g, '$')
+  }
   /**
    *
    * @param {import("index").SSHClient} client

@@ -3,19 +3,44 @@ import path from 'node:path'
 import settings from './settings.js'
 import SSHClient from './modules/ssh.js'
 import Builder from './modules/builder.js'
+import DockerLocalBuilder from './modules/docker/local.js'
+import { ensureDockerImageTag, getDockerBuildMode } from './modules/docker/config.js'
 import { backup, deploy, rollback } from './modules/deploy.js'
 import {
   execHook,
   getDeployConfigPath,
   checkDeployConfig,
-  formatFileSize
+  resolveDeployPath,
+  formatFileSize,
+  askRebuildWhenDistExists,
+  resolveProjectMeta
 } from './utils/index.js'
+import {
+  buildDeployPlan,
+  createStepRunner,
+  resolveBuildCmd
+} from './utils/cli-run.js'
 import logger, { addTransport } from './utils/logger.js'
+import {
+  deployHeader,
+  rollbackHeader,
+  progress,
+  fail,
+  section,
+  deploySummary,
+  deployContextLines,
+  shortLocalPath
+} from './utils/cli-log.js'
 import { delayer } from './utils/delayer.js'
 import dayjs from 'dayjs'
 import intersection from 'lodash/intersection.js'
 
 export { addTransport }
+export {
+  hasProjectManifest,
+  resolveProjectMeta,
+  resolveProjectName
+} from './utils/project-meta.js'
 /**
  *
  * @param {import('index').DeployConfig} config
@@ -23,30 +48,33 @@ export { addTransport }
  */
 export default async function autodeploy(config, options) {
   const rootPath = process.cwd()
-  const packageInfo = fs
-    .readFileSync(path.resolve(rootPath, 'package.json'))
-    .toString()
+  const projectMeta = resolveProjectMeta(rootPath, config)
 
-  logger.debug('package.json：' + packageInfo)
-
-  settings.packageInfo = JSON.parse(packageInfo)
+  settings.packageInfo = projectMeta.packageInfo
   settings.deployConfig = config
-  settings.deployConfig.projectName = (
-    settings.deployConfig.projectName ||
-    settings.packageInfo.name ||
-    ''
-  ).replace(/\/|\\|:|\*|\?|"|<|>|\|/g, '_')
+  config.projectName = projectMeta.projectName
+
+  logger.debug(
+    `projectName 来自 ${projectMeta.source}: ${config.projectName}`
+  )
+  if (projectMeta.manifest) {
+    logger.debug(
+      `项目清单 ${projectMeta.manifest.source}：${projectMeta.manifest.name}`
+    )
+  } else if (projectMeta.packageInfo) {
+    logger.debug('package.json：' + JSON.stringify(projectMeta.packageInfo))
+  }
 
   const startTime = new Date()
 
+  const envLabel = config.name || config.env
   if (options.rollback) {
-    logger.info(
-      `版本回退 [${config.projectName}] -> (${config.name || config.env})`
-    )
+    logger.info(rollbackHeader(config.projectName, envLabel))
   } else {
-    logger.info(
-      `自动化部署 [${config.projectName}] -> (${config.name || config.env})`
-    )
+    logger.info(deployHeader(config.projectName, envLabel))
+    for (const line of deployContextLines(config, options)) {
+      logger.info(line, { cliContext: true })
+    }
   }
 
   function logOnExit(code) {
@@ -60,11 +88,10 @@ export default async function autodeploy(config, options) {
         break
     }
 
+    const elapsed = (new Date() - startTime) / 1000
     logger.log(
       level,
-      `${action}部署结束，当前时间：${new Date().toLocaleString()}，总耗时：${
-        (new Date() - startTime) / 1000
-      }秒 \r\n\r\n`
+      `${action}结束 · ${elapsed >= 1 ? `${elapsed.toFixed(1)}s` : `${Math.round(elapsed * 1000)}ms`}`
     )
   }
 
@@ -83,9 +110,13 @@ export default async function autodeploy(config, options) {
       ? config.server
       : [config.server]
 
-    config.deploy.deployPath = config.deploy.deployPath
-      .trim()
-      .replace(/[/]$/gim, '')
+    const hadDeployPath = !!config.deploy?.deployPath?.trim()
+    config.deploy.deployPath = resolveDeployPath(config)
+    if (!hadDeployPath && config.deploy?.docker) {
+      logger.debug(
+        `未配置 deployPath，Docker 模式使用临时目录: ${config.deploy.deployPath}`
+      )
+    }
     config.deploy.backupPath = getDeployConfigPath(
       config,
       config.deploy.backupPath,
@@ -100,6 +131,8 @@ export default async function autodeploy(config, options) {
     let finishMsg = ''
     let successCount = 0,
       failCount = 0
+    /** @type {string} */
+    let artifactLine = ''
 
     if (!!options.rollback) {
       let sshClients = [],
@@ -125,7 +158,6 @@ export default async function autodeploy(config, options) {
         }
 
         if (backupList) {
-          // 计算并集
           backupList = intersection(backupList, list)
         } else {
           backupList = list
@@ -171,151 +203,176 @@ export default async function autodeploy(config, options) {
         client.disconnect()
       }
 
-      finishMsg = `共${servers.length}个服务器回滚到版本${version}：${successCount}个成功，${failCount}个失败`
-    } else {
-      logger.info(
-        `部署信息：` +
-          `\r\n    - 目标服务器： ${servers
-            .map((item) => item.host)
-            .join(', ')}` +
-          `\r\n    - 部署路径： ${config.deploy.deployPath}` +
-          `\r\n    - 是否备份： ${options.backup ? '是' : '否'}` +
-          (options.backup
-            ? `\r\n    - 备份路径: ${config.deploy.backupPath}`
-            : '')
+      const elapsed = (new Date() - startTime) / 1000
+      finishMsg = deploySummary(
+        successCount,
+        servers.length,
+        `回退 ${version}`,
+        elapsed
       )
+    } else {
+      const useZipFile = !!(options.file && fs.existsSync(options.file))
+      const buildCmd = resolveBuildCmd(config)
+      let skipBuild = false
 
-      // #region 构建/打包项目
+      if (!useZipFile && buildCmd) {
+        const shouldRebuild = await askRebuildWhenDistExists(config.prompt, {
+          distPath: config.build?.distPath || 'dist'
+        })
+        skipBuild = !shouldRebuild
+      }
+
+      const plan = buildDeployPlan(config, options, {
+        skipBuild,
+        useZipFile
+      })
+      const steps = createStepRunner(logger, plan.total)
+
       let outputPkgName = ''
       let builder
-
-      logger.debug('options.file  ' + options.file)
-      // if (options.file) {
-      //   try {
-      //     if (path.isAbsolute(options.file)) {
-      //       options.file = path.resolve(options.file)
-      //     } else {
-      //       options.file = path.resolve(rootPath, options.file)
-      //     }
-      //   } catch (error) {
-      //     options.file = ''
-      //   }
-      // }
-
-      if (options.file && fs.existsSync(options.file)) {
-        logger.info(`传入了部署文件名称，将跳过打包`)
-        outputPkgName = options.file
-      } else {
-        /** 打包压缩后的输出文件名 */
-        builder = new Builder(config.env)
-
-        outputPkgName = builder.outputPkgName
-        const distPath = config.build?.distPath || 'dist'
-
-        const buildCmd =
-          config.build?.cmd != null
-            ? config.build?.cmd
-            : `npm run ${config.build?.script || 'build'}`
-
-        if (buildCmd) {
-          logger.info(`构建项目中：${buildCmd}`, { loading: true })
-          await execHook('buildBefore', { config })
-          try {
-            await builder.build(buildCmd)
-          } catch (error) {
-            logger.error('构建失败：' + error)
-            throw ''
-          }
-          logger.info(`构建项目成功：${buildCmd}`, { success: true })
-          await execHook('buildAfter', { config })
-        } else {
-          logger.warn('未配置构建命令，跳过构建')
-        }
-
-        await execHook('compressBefore', { config })
-        logger.info(`压缩项目中：${distPath} -> ${outputPkgName}`, {
-          loading: true
-        })
-        try {
-          const buildRes = await builder.zip(distPath)
-
-          let zipSize = formatFileSize(buildRes.size)
-          logger.info(
-            `压缩项目成功： ${distPath} -> ${outputPkgName} (size: ${zipSize})`,
-            { success: true }
-          )
-          await execHook('compressAfter', { config })
-        } catch (error) {
-          logger.error('压缩失败 ->' + error)
-          throw ''
-        }
-      }
-      // #endregion
-
-      // #region 部署到服务器
-
-      const backupName = `bak_${dayjs().format('YYYYMMDD_HH_mm_ss')}`
-      for (let server of servers) {
-        const sshClient = new SSHClient(
-          { ...server, agent: config.agent, proxy: config.proxy },
-          config
-        )
-        try {
-          // logger.info(`连接服务器中 -> ${server?.host}:${server?.port}`, {
-          //   loading: true
-          // })
-          try {
-            await sshClient.connect()
-          } catch (error) {
-            process.exit(0)
-            return
-          }
-
-          let res
-
-          logger.info(`--------部署到服务器开始 (${sshClient.host})--------`)
-          res = await deploy(sshClient, config, {
-            backup: options.backup,
-            backupName,
-            pkgPath: outputPkgName
-          })
-          logger.info(`--------部署到服务器结束 (${sshClient.host})--------`)
-
-          if (res) {
-            successCount++
-          } else {
-            failCount++
-          }
-        } catch (error) {
-          failCount++
-        } finally {
-          try {
-            sshClient.disconnect()
-          } catch (error) {}
-        }
-      }
-
-      // #endregion
+      /** 是否为本次部署自动生成的 zip（可安全删除） */
+      let createdPkg = false
+      let imageTarLocalPath = null
 
       try {
-        logger.info('删除本地部署文件中', { loading: true })
+        if (useZipFile) {
+          steps.skip('打包', '使用指定 zip')
+          outputPkgName = options.file
+        } else {
+          builder = new Builder(config.env)
+          outputPkgName = builder.outputPkgName
+          createdPkg = true
+          const distPath = config.build?.distPath || 'dist'
 
-        await builder?.deleteZip()
+          if (buildCmd) {
+            if (skipBuild) {
+              steps.skip('构建', `使用已有 ${distPath}`)
+            } else {
+              const buildTitle = progress(`构建项目（${buildCmd}）`)
+              const formatBuildProgress = (lines) => {
+                if (!lines?.length) {
+                  return buildTitle
+                }
+                return `${buildTitle}\n${lines.map((line) => `  ${line}`).join('\n')}`
+              }
 
-        logger.info(`删除本地部署文件成功 -> ${outputPkgName}`, {
-          success: true
-        })
-      } catch (error) {
-        logger.error('删除本地部署文件失败 -> ' + error)
+              steps.start(`构建项目（${buildCmd}）`)
+              await execHook('buildBefore', { config })
+              try {
+                await builder.build(buildCmd, (lines) => {
+                  steps.progress(formatBuildProgress(lines), {
+                    buildTail: true
+                  })
+                })
+                steps.succeed(buildCmd)
+              } catch (error) {
+                steps.failStep(error)
+                throw error
+              }
+              await execHook('buildAfter', { config })
+            }
+          } else {
+            logger.warn('未配置构建命令，跳过构建')
+          }
+
+          await execHook('compressBefore', { config })
+          steps.start('打包')
+          try {
+            const buildRes = await builder.zip(distPath)
+            const zipSize = formatFileSize(buildRes.size)
+            steps.succeed(zipSize, outputPkgName)
+            await execHook('compressAfter', { config })
+          } catch (error) {
+            steps.failStep(error)
+            throw error
+          }
+        }
+
+        if (config.deploy?.docker) {
+          ensureDockerImageTag(config)
+          if (getDockerBuildMode(config.deploy.docker) === 'local') {
+            await DockerLocalBuilder.checkDockerCli()
+            const distPath = config.build?.distPath || 'dist'
+            steps.start('构建镜像')
+            try {
+              imageTarLocalPath = await DockerLocalBuilder.buildAndSave(
+                config,
+                distPath
+              )
+              steps.succeed(shortLocalPath(imageTarLocalPath))
+            } catch (error) {
+              steps.failStep(error)
+              throw error
+            }
+          }
+        }
+
+        const backupName = `bak_${dayjs().format('YYYYMMDD_HH_mm_ss')}`
+        for (let server of servers) {
+          const sshClient = new SSHClient(
+            { ...server, agent: config.agent, proxy: config.proxy },
+            config
+          )
+          try {
+            await sshClient.connect()
+            logger.info(section(sshClient.host), { section: true })
+
+            const res = await deploy(sshClient, config, {
+              backup: options.backup,
+              backupName,
+              pkgPath: outputPkgName,
+              imageTarLocalPath,
+              stepRunner: steps
+            })
+
+            if (res?.ok) {
+              successCount++
+              if (res.fullImage) {
+                artifactLine = `镜像 ${res.fullImage}`
+              }
+            } else {
+              failCount++
+            }
+          } catch (error) {
+            failCount++
+            logger.error(fail('部署到服务器', error), { host: server.host })
+          } finally {
+            try {
+              sshClient.disconnect()
+            } catch (_error) {
+              /* ignore */
+            }
+          }
+        }
+
+        const elapsed = (new Date() - startTime) / 1000
+        finishMsg = deploySummary(
+          successCount,
+          servers.length,
+          envLabel,
+          elapsed,
+          artifactLine
+        )
+      } finally {
+        try {
+          if (createdPkg && outputPkgName) {
+            await Builder.deletePkgFile(outputPkgName)
+            logger.debug(`已清理本地 zip · ${path.basename(outputPkgName)}`)
+          }
+          if (imageTarLocalPath) {
+            await DockerLocalBuilder.deleteImageTar(imageTarLocalPath)
+            logger.debug(
+              `已清理本地镜像包 · ${path.basename(imageTarLocalPath)}`
+            )
+          }
+        } catch (error) {
+          logger.warn(fail('清理本地临时文件', error))
+        }
       }
-
-      finishMsg = `共${servers.length}个服务器部署${config.name}：${successCount}个成功，${failCount}个失败`
     }
 
     if (successCount === servers.length) {
-      logger.info(finishMsg, {
-        success: true
-      })
+      logger.info(finishMsg, { success: true })
     } else if (failCount === servers.length) {
       logger.error(finishMsg)
     } else {
@@ -326,7 +383,7 @@ export default async function autodeploy(config, options) {
 
     process.exit(0)
   } catch (error) {
-    logger.error((error || '') + '')
+    logger.error(fail('部署流程', error))
     process.exit(1)
   }
 }

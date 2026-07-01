@@ -1,3 +1,33 @@
+# v1.3.0
+
+**新增**
+- Docker 部署支持 `buildMode: local | remote`（本机构建镜像 tar 上传 / 服务器构建）
+- Docker 支持 `distMode: mount | embed`（dist 卷挂载 / COPY 进镜像）
+- `deploy.docker` 拆分为 `docker.image`（镜像）与 `docker.container`（容器）
+- 支持 Docker Compose（`compose.mode: managed | remote`，可接入服务器已有 compose 栈）
+- 镜像上传或构建完成后自动重启容器 / `compose up`
+- 部署时若 `distPath` 已有内容，询问是否重新构建（10 秒超时默认重新构建）
+- 无 `package.json` 或多语言项目：自动识别 `pyproject.toml`、`Cargo.toml`、`composer.json`、`go.mod`、`pom.xml`、`build.gradle(.kts)`、`.csproj` 等清单解析项目名
+- 配置项 `projectName`：未填写时按「配置 → 清单 → 目录名 → env」回退
+- 单元测试：`npm test`（基于 Node 内置 test runner，覆盖配置解析、部署计划、Docker、demo 环境 mock 链路）
+
+**优化**
+- Dockerfile、nginx 配置改为 SFTP 上传，避免 echo 写入失败
+- 部署日志记录镜像全名与构建模式
+- `compose.projectName` 可选：未配置时从 compose 文件、`.env`、`docker compose ls` 或 `workDir` 自动解析
+- CLI 流水线：`[n/N]` 步骤编号、耗时、跳过步骤动态补全总数；部署前输出环境上下文摘要
+- 构建失败时展示控制台尾部日志（`outputTail`），便于定位编译错误
+- 部署结束后自动清理本次生成的本地 zip（`--file` 指定的包不删）
+- 解压逻辑增强（`ensure-unzip`）；`--debug` 输出技术细节
+
+**修复**
+- 修复步骤计数可能出现 `[5/4]` 的问题（skip 构建与计划步数不一致）
+- 配置文件存在但加载失败时，不再误报「将创建默认配置」，并提示删除 `require('./package.json')`
+- 默认模板 `deploy.config.cjs` 移除对 `package.json` 的硬依赖
+
+**变更**
+- `docker.image.buildMode` 须写在 `deploy.docker.image` 下（不再支持旧版扁平字段）
+
 # v1.2.2
 
 **变更**

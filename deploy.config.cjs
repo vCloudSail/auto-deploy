@@ -1,5 +1,3 @@
-const pkg = require('./package.json')
-
 /** @type {import('./deploy.config').DeployConfigMap} */
 const configs = {
   dev: {

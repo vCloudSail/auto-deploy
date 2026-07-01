@@ -1,16 +1,40 @@
+import fs from 'node:fs'
 import path from 'node:path'
 
-import { execHook, formatFileSize, getDefaultOperator } from '../utils/index.js'
+import {
+  execHook,
+  getDefaultOperator,
+  extractRemoteZip,
+  shouldUseSudoForDeployFiles
+} from '../utils/index.js'
+import {
+  fail,
+  uploadDone,
+  shortLocalPath,
+  shortRemotePath
+} from '../utils/cli-log.js'
+import { formatFileSize } from '../utils/index.js'
 import logger from '../utils/logger.js'
 import SSHClient from './ssh.js'
 import dayjs from 'dayjs'
 import settings from '@/settings.js'
 import { delayer } from '@/utils/delayer.js'
 import NginxHelper from './nginx.js'
-import DockerHelper from './docker.js'
+import DockerHelper from './docker/index.js'
+import { getDockerBuildMode } from './docker/config.js'
 
 /**
- * 备份
+ * @param {SSHClient} client
+ * @param {import('index').DeployConfig} config
+ * @param {string} command
+ */
+function deployFileExec(client, config, command) {
+  return client.exec(command, undefined, {
+    useSudo: shouldUseSudoForDeployFiles(config)
+  })
+}
+
+/**
  * @param {SSHClient} client
  * @param {object} options
  * @param {boolean} options.success
@@ -44,84 +68,90 @@ async function appendRecord(
 
     const today = dayjs().format('YYYY-MM-DD')
 
-    await client.exec(`mkdir -p ${config.deploy.logPath}`).catch((err) => err)
-    await client.exec(
+    await deployFileExec(client, config, `mkdir -p ${config.deploy.logPath}`).catch(
+      (err) => err
+    )
+    await deployFileExec(
+      client,
+      config,
       `echo "[${dayjs().format('YYYY-MM-DD HH:mm:ss.SSS')}] [${
         success ? 'Success' : 'Fail'
       }] ${operator}执行${action}${success ? '成功' : '失败'}${
         message ? `${message || '无'}` : ''
       }" >> ${config.deploy.logPath}/${today}.log`
     )
-    logger.info(`服务器追加操作日志成功（${action}）`, {
-      host: client.host,
-      success: true
-    })
+    logger.debug(`操作日志已写入（${action}）`, { host: client.host })
   } catch (error) {
-    logger.error(`服务器追加操作日志失败（${action}）：` + error, {
+    logger.debug(`操作日志写入失败（${action}）：${error}`, {
       host: client.host
     })
   }
 }
 
 /**
- * 备份
  * @param {SSHClient} client
- * @param {{deployPath:string,deployFolder:string,backupPath:string,backupName:string}} config
+ * @param {{deployPath:string,deployFolder:string,backupPath:string,backupName:string, stepRunner?: ReturnType<import('../utils/cli-run.js').createStepRunner>}} config
  */
 export async function backup(
   client,
-  { deployPath, deployFolder, backupPath, backupName } = {}
+  { deployPath, deployFolder, backupPath, backupName, stepRunner } = {}
 ) {
-  logger.info('开始备份服务器当前版本', { host: client.host, loading: true })
+  const hostMeta = { host: client.host }
+
   try {
     let needBackUp = true
     try {
       await client.exec(`stat ${deployPath}${deployFolder}`)
-    } catch (error) {
-      logger.warn('部署文件夹不存在，跳过备份', { host: client.host })
+    } catch (_error) {
+      if (stepRunner) {
+        stepRunner.skip('备份', '部署文件夹不存在', hostMeta)
+      } else {
+        logger.warn('部署文件夹不存在，跳过备份', hostMeta)
+      }
       needBackUp = false
     }
 
-    if (needBackUp) {
-      await execHook('backupBefore', client)
+    if (!needBackUp) {
+      return
+    }
 
-      // logger.info('备份文件夹 -> ' + backupPath)
+    if (stepRunner) {
+      stepRunner.start('备份当前版本', hostMeta)
+    }
 
-      backupName =
-        backupName ||
-        `${deployFolder}_bak_${dayjs().format('YYYYMMDD_HH_mm_ss')}`
+    await execHook('backupBefore', client)
 
-      await client.exec(`mkdir -p ${backupPath}`).catch((err) => {
-        logger.debug('创建备份文件夹失败 -> ' + err, {
-          host: client.host
-        })
-      })
-      await client.exec(
-        `cd ${deployPath}/${deployFolder};tar -zcvf ${backupPath}/${backupName}.tar.gz ./`
-      )
-      // await client.exec(
-      //   `cp -r ${deployPath}${deployFolder} ${backupPath}/${backupName}`
-      // )
+    backupName =
+      backupName ||
+      `${deployFolder}_bak_${dayjs().format('YYYYMMDD_HH_mm_ss')}`
 
-      logger.info(`备份当前版本成功 -> ${backupPath}/${backupName}.tar.gz`, {
-        host: client.host,
+    await client.exec(`mkdir -p ${backupPath}`).catch((err) => {
+      logger.debug('创建备份文件夹失败 -> ' + err, hostMeta)
+    })
+    await client.exec(
+      `cd ${deployPath}/${deployFolder};tar -zcvf ${backupPath}/${backupName}.tar.gz ./`
+    )
+
+    if (stepRunner) {
+      stepRunner.succeed(`${backupName}.tar.gz`)
+    } else {
+      logger.info(`备份完成 · ${backupName}.tar.gz`, {
+        ...hostMeta,
         success: true
       })
-
-      await appendRecord(client, {
-        success: true,
-        mode: 'backup',
-        message: ` -> ${backupName}.tar.gz`
-      })
-      await execHook('backupAfter', client)
     }
+
+    await appendRecord(client, {
+      success: true,
+      mode: 'backup',
+      message: ` -> ${backupName}.tar.gz`
+    })
+    await execHook('backupAfter', client)
   } catch (error) {
-    // await appendRecord(client, {
-    //   success: false,
-    //   mode: 'backup',
-    //   message: error
-    // })
-    throw new Error(`备份失败 -> ${error}`)
+    if (stepRunner) {
+      stepRunner.failStep(error, hostMeta)
+    }
+    throw new Error(fail('备份', error))
   }
 }
 
@@ -179,7 +209,7 @@ export async function rollback(
       return
     }
 
-    logger.info(`正在回退历史版本 -> ${version}`, {
+    logger.info(`回退到 ${version}…`, {
       host: client.host,
       loading: true
     })
@@ -190,9 +220,8 @@ export async function rollback(
       `mkdir -p ${tempPath};tar -zxvPf ${backupPath}/${version} -C ${tempPath}`
     )
     await client.exec(`rm -rf ${deployPath};mv -f ${tempPath} ${deployPath};`)
-    // await client.exec(`rm ${backupPath}/${version}`)
 
-    logger.info(`成功回退到历史版本 -> ${version}`, {
+    logger.info(`回退完成 · ${version}`, {
       host: client.host,
       success: true
     })
@@ -213,19 +242,28 @@ export async function rollback(
 }
 
 /**
- * 备份
  * @param {SSHClient} client
  * @param {import('index').DeployConfig} config
  * @param {object} options
  * @param {boolean} options.backup
  * @param {string} options.backupName
  * @param {string} options.pkgPath
+ * @param {string} [options.imageTarLocalPath]
+ * @param {ReturnType<import('../utils/cli-run.js').createStepRunner>} [options.stepRunner]
+ * @returns {Promise<{ ok: boolean, fullImage?: string }>}
  */
 export async function deploy(client, config, options = {}) {
+  /** @type {import('./docker/index.js').default | null} */
+  let dockerHelper = null
+  /** @type {{ fullImage: string, service?: string, project?: string } | void} */
+  let reloadMeta
+
+  const steps = options.stepRunner
+  const hostMeta = { host: client.host }
+
   try {
     await execHook('deployBefore', { config, client })
 
-    // 删除尾部斜杠
     let deployPath = config.deploy?.deployPath?.trim().replace(/[/]$/gim, ''),
       deployFolder
 
@@ -240,8 +278,6 @@ export async function deploy(client, config, options = {}) {
       throw new Error('部署路径或文件夹错误')
     }
 
-    // let uploadPkgPath = `${deployPath}/${outputPkgName}`
-
     await execHook('uploadBefore', { config, client })
     try {
       if (config.deploy.uploadPath) {
@@ -249,221 +285,302 @@ export async function deploy(client, config, options = {}) {
           .exec(`mkdir -p ${config.deploy.uploadPath}`)
           .catch((err) => err)
       }
-      await client
-        .exec(`mkdir -p ${config.deploy.deployPath}`)
-        .catch((err) => err)
+      await deployFileExec(client, config, `mkdir -p ${config.deploy.deployPath}`).catch(
+        (err) => err
+      )
 
       let localPath = path.resolve(process.cwd(), options.pkgPath)
       let remotePath = `${
         (config.deploy.uploadPath || deployPath).replace(/[/]$/, '') + '/'
       }${options.pkgPath}`
 
-      logger.info(`上传压缩包中: ${localPath} -> ${remotePath}`, {
-        host: client.host,
-        loading: true
-      })
+      const zipStat = fs.existsSync(localPath) ? fs.statSync(localPath) : null
+
+      if (steps) {
+        steps.start('上传压缩包', hostMeta)
+      }
 
       await client.upload(localPath, remotePath)
 
-      logger.info(`上传压缩包成功: ${localPath} -> ${remotePath}`, {
-        host: client.host,
-        success: true
-      })
+      if (steps) {
+        steps.succeed(
+          zipStat?.size != null ? formatFileSize(zipStat.size) : '',
+          shortLocalPath(localPath),
+          `→ ${shortRemotePath(remotePath)}`
+        )
+      } else {
+        logger.info(uploadDone(localPath, remotePath, zipStat?.size), {
+          ...hostMeta,
+          success: true
+        })
+      }
 
       if (config.deploy.uploadPath) {
-        logger.info(
-          `配置了uploadPath，调整压缩包位置中: ${remotePath} -> ${deployPath}${options.pkgPath}`,
-          { host: client.host, loading: true }
+        logger.debug(
+          `调整压缩包位置 ${shortRemotePath(remotePath)} → ${shortRemotePath(deployPath + options.pkgPath)}`,
+          hostMeta
         )
-        await client.exec(`mv -f ${remotePath} ${deployPath}`)
+        await deployFileExec(client, config, `mv -f ${remotePath} ${deployPath}`)
+      }
 
-        logger.info(
-          `调整压缩包位置成功: ${remotePath} -> ${deployPath}${options.pkgPath}`,
-          { host: client.host, success: true }
-        )
+      if (
+        getDockerBuildMode(config.deploy?.docker) === 'local' &&
+        options.imageTarLocalPath
+      ) {
+        const tarHelper = new DockerHelper(client, config)
+        const remoteTar = tarHelper.getImageTarRemotePath()
+        const localTar = path.isAbsolute(options.imageTarLocalPath)
+          ? options.imageTarLocalPath
+          : path.resolve(process.cwd(), options.imageTarLocalPath)
+
+        const tarStat = fs.existsSync(localTar) ? fs.statSync(localTar) : null
+
+        if (steps) {
+          steps.start('上传镜像包', hostMeta)
+        }
+
+        await deployFileExec(
+          client,
+          config,
+          `mkdir -p ${path.posix.dirname(remoteTar).replace(/\\/g, '/')}`
+        ).catch((err) => err)
+        await client.upload(localTar, remoteTar)
+
+        if (steps) {
+          steps.succeed(
+            tarStat?.size != null ? formatFileSize(tarStat.size) : '',
+            shortLocalPath(localTar),
+            `→ ${shortRemotePath(remoteTar)}`
+          )
+        } else {
+          logger.info(uploadDone(localTar, remoteTar, tarStat?.size), {
+            ...hostMeta,
+            success: true
+          })
+        }
       }
 
       await execHook('uploadAfter', { config, client })
     } catch (error) {
-      logger.error('上传压缩包失败 -> ' + error, { host: client.host })
-      throw ''
+      if (steps) {
+        steps.failStep(error, hostMeta)
+      } else {
+        logger.error(fail('上传', error), hostMeta)
+      }
+      throw error
     }
 
-    // #region 备份
     if (options.backup) {
       await backup(client, {
         deployPath,
         deployFolder,
         backupPath,
-        backupName: options.backupName
+        backupName: options.backupName,
+        stepRunner: steps
       })
     }
-    // #endregion
 
-    // 先解压到临时文件夹，防止执行失败导致web无法访问
     let unzipTempFolder = `autodeploy_${deployFolder}_temp`
+    const dockerHelperForPath = config.deploy?.docker
+      ? new DockerHelper(client, config)
+      : null
     let unzipPath =
-      deployPath + unzipTempFolder + (config.deploy.docker ? '/dist' : '')
-    let unzipCmd = `unzip -o ${deployPath + options.pkgPath} -d ${unzipPath}`
+      deployPath +
+      unzipTempFolder +
+      (dockerHelperForPath?.needsDistSubfolder() ? '/dist' : '')
     let originTempFolder = `${deployFolder}_cache_${
       (Math.random() + 100) * 1000
     }`
-    logger.debug('unzip命令：' + unzipCmd)
+    const remoteZipPath = deployPath + options.pkgPath
+    logger.debug(
+      '解压命令：' + `unzip/python -> ${remoteZipPath} -d ${unzipPath}`
+    )
 
     try {
-      logger.info('解压部署压缩包中...', { loading: true })
+      if (steps) {
+        steps.start('解压', hostMeta)
+      }
 
-      await client.exec(`mkdir -p ${unzipPath}`).catch((err) => false)
-      /**
-       * 解压到临时文件夹
-       */
-      await client.exec(unzipCmd)
-      /**
-       * 1. 将原始项目文件夹重命名为临时文件夹名称
-       * 2. 将新的部署项目重命名为项目文件夹名称
-       * 3. 删除原始项目的临时文件夹
-       */
-      await client.exec(
+      await deployFileExec(client, config, `mkdir -p ${unzipPath}`).catch(
+        () => false
+      )
+      await extractRemoteZip(client, remoteZipPath, unzipPath)
+      await deployFileExec(
+        client,
+        config,
         `cd ${deployPath}; mv -f ${deployFolder} ${originTempFolder};mv -f ${unzipTempFolder} ${deployFolder};rm -rf ${originTempFolder}`
       )
 
-      logger.info('解压部署文件成功', { host: client.host, success: true })
+      if (steps) {
+        steps.succeed(deployFolder)
+      }
+
       if (config.deploy?.docker) {
-        const dockerHelper = new DockerHelper(client, config)
+        dockerHelper = new DockerHelper(client, config)
+
         try {
-          logger.info('检测到docker配置，构建docker镜像中...', {
-            host: client.host,
-            loading: true
-          })
-
-          if (config.nginx) {
-            const nginxHelper = new NginxHelper(client, config)
-
-            await nginxHelper.generateConf(config.deploy.deployPath)
-          }
-          await dockerHelper.build()
-
-          logger.info(`构建docker镜像成功 -> ${dockerHelper.imageName}`, {
-            host: client.host,
-            success: true
-          })
+          await dockerHelper.ensureRemoteDocker()
         } catch (error) {
-          logger.error('构建docker镜像失败 -> ' + error, {
-            host: client.host
-          })
-          return
+          if (steps) {
+            steps.failStep(error, hostMeta)
+          } else {
+            logger.error(fail('Docker 不可用', error), hostMeta)
+          }
+          return { ok: false }
+        }
+
+        const workDir = dockerHelper.getComposeWorkDir()
+        if (
+          workDir !== dockerHelper.deployRoot &&
+          dockerHelper.needsDistSubfolder()
+        ) {
+          logger.debug(`同步 dist 到 ${workDir}/dist`, hostMeta)
+          await client
+            .exec(
+              `mkdir -p ${workDir}/dist && cp -rf ${dockerHelper.deployRoot}/dist/. ${workDir}/dist/`
+            )
+            .catch((err) => err)
         }
 
         try {
-          logger.info('启动docker镜像中...', {
-            host: client.host,
-            loading: true
-          })
-          await dockerHelper.reload()
-
-          logger.info(`启动docker镜像成功 -> ${dockerHelper.imageName}`, {
-            host: client.host,
-            success: true
-          })
+          logger.debug(
+            `buildMode=${dockerHelper.buildMode} distMode=${dockerHelper.distMode}`,
+            hostMeta
+          )
+          if (dockerHelper.buildMode === 'remote') {
+            if (steps) {
+              steps.start('构建镜像', hostMeta)
+            }
+            await dockerHelper.buildRemote()
+            if (steps) {
+              steps.succeed(dockerHelper.fullImage)
+            }
+          } else {
+            if (steps) {
+              steps.start('加载镜像', hostMeta)
+            }
+            await dockerHelper.loadImageRemote()
+            if (steps) {
+              steps.succeed(dockerHelper.fullImage)
+            }
+          }
         } catch (error) {
-          logger.error('启动docker镜像失败 -> ' + error, {
-            host: client.host
-          })
-          return
+          if (steps) {
+            steps.failStep(error, hostMeta)
+          } else {
+            logger.error(fail('镜像处理', error), hostMeta)
+          }
+          return { ok: false }
+        }
+
+        try {
+          if (steps) {
+            steps.start('重启服务', hostMeta)
+          }
+          reloadMeta = await dockerHelper.reload()
+          const serviceParts = [
+            reloadMeta?.service,
+            reloadMeta?.project
+              ? `compose 项目 ${reloadMeta.project}`
+              : ''
+          ].filter(Boolean)
+          if (steps) {
+            steps.succeed(...serviceParts)
+          }
+        } catch (error) {
+          if (steps) {
+            steps.failStep(error, hostMeta)
+          } else {
+            logger.error(fail('服务重启', error), hostMeta)
+          }
+          return { ok: false }
         }
       }
 
+      const dockerMeta = dockerHelper
       await appendRecord(client, {
         success: true,
         mode: 'deploy',
-        message: ` -> 版本迭代`
+        message: dockerMeta
+          ? ` · ${dockerMeta.fullImage}`
+          : ` · 版本迭代`
       })
     } catch (error) {
-      logger.error('解压部署文件失败 -> ' + error, {
-        host: client.host
-      })
-      await client
-        .exec(`cd ${deployPath};mv -f ${originTempFolder} ${deployFolder}`)
-        .catch((err) => err)
-      throw ''
+      if (steps) {
+        steps.failStep(error, hostMeta)
+      } else {
+        logger.error(fail('解压', error), hostMeta)
+      }
+      await deployFileExec(
+        client,
+        config,
+        `cd ${deployPath};mv -f ${originTempFolder} ${deployFolder}`
+      ).catch((err) => err)
+      throw error
     } finally {
       if (config.nginx && !config.deploy?.docker) {
         if (await NginxHelper?.checkConfExist(client, config)) {
-          logger.warn('Nginx配置文件已存在，跳过自动生成', {
-            host: client.host
-          })
+          if (steps) {
+            steps.skip('Nginx 配置', '配置文件已存在', hostMeta)
+          } else {
+            logger.warn('Nginx配置文件已存在，跳过自动生成', hostMeta)
+          }
         } else {
           try {
-            logger.info('生成Nginx配置文件中...', {
-              host: client.host,
-              loading: true
-            })
+            if (steps) {
+              steps.start('生成 Nginx 配置', hostMeta)
+            }
 
             const nginxHelper = new NginxHelper(client, config)
-
             const nginxConfPath = await nginxHelper.generateConf()
-
-            logger.info(`生成Nginx配置文件成功 -> ${nginxConfPath}`, {
-              host: client.host,
-              success: true
-            })
-
             await nginxHelper.reload()
 
-            logger.info(`Nginx重新加载配置成功 -> ${nginxConfPath}`, {
-              host: client.host,
-              success: true
-            })
+            if (steps) {
+              steps.succeed(shortRemotePath(nginxConfPath))
+            }
           } catch (error) {
-            logger.error('生成Nginx配置文件失败 -> ' + error, {
-              host: client.host
-            })
+            if (steps) {
+              steps.failStep(error, hostMeta)
+            } else {
+              logger.error(fail('Nginx 配置', error), hostMeta)
+            }
           }
         }
       }
 
       try {
-        logger.info('删除上传的部署文件中...', {
-          host: client.host,
-          loading: true
-        })
-
-        await client.exec(`rm -rf ${deployPath}${options.pkgPath}`)
-
-        logger.info(
-          `删除上传的部署文件成功 -> ${deployPath}${options.pkgPath}`,
-          {
-            host: client.host,
-            success: true
-          }
-        )
+        await deployFileExec(client, config, `rm -rf ${deployPath}${options.pkgPath}`)
+        logger.debug(`已清理远端临时包 ${options.pkgPath}`, hostMeta)
       } catch (error) {
-        logger.error('删除上传的部署文件失败 -> ' + error, {
-          host: client.host
-        })
+        logger.debug(fail('清理远端临时包', error), hostMeta)
       }
     }
 
     await delayer(1)
-    logger.info(`部署成功 -> ${deployPath}${deployFolder}`, {
-      host: client.host,
-      success: true
-    })
+
+    if (steps) {
+      steps.start('部署完成', hostMeta)
+      steps.succeed(
+        dockerHelper ? dockerHelper.fullImage : deployFolder
+      )
+    }
 
     await execHook('deployAfter', { config, client })
-    return true
+    return {
+      ok: true,
+      fullImage: dockerHelper?.fullImage || reloadMeta?.fullImage
+    }
   } catch (error) {
     await appendRecord(client, {
       success: false,
       mode: 'deploy',
-      message: error?.stack
+      message: error instanceof Error ? error.message : String(error)
     })
-    error && logger.error(error?.stack + '')
-    logger.error(`部署失败`, {
-      host: client.host
-    })
-    return false
-  } finally {
-    // await builder.deleteZip()
+    if (steps) {
+      steps.failStep(error, hostMeta)
+    } else {
+      logger.error(fail('部署', error), hostMeta)
+    }
+    return { ok: false }
   }
 }

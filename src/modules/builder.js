@@ -1,11 +1,91 @@
 import path from 'node:path'
 import fs from 'node:fs'
+import { spawn } from 'node:child_process'
 
 import archiver from 'archiver'
-import { exec } from 'child-process-promise'
 import settings from '../settings.js'
+import { distHasContent } from '../utils/dist-build-prompt.js'
 // import { uniqueId } from 'lodash'
 settings
+
+/** 构建过程中 spinner 展示的最新行数 */
+const TAIL_LINE_COUNT = 8
+/** 失败时附带的日志行数 */
+const TAIL_ERROR_LINE_COUNT = 30
+const TAIL_UPDATE_MS = 120
+
+/**
+ * @param {number} maxLines
+ * @param {(lines: string[]) => void} [onUpdate]
+ */
+function createLineTailer(maxLines, onUpdate) {
+  let buffer = ''
+  /** @type {string[]} */
+  let tail = []
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let throttleTimer = null
+
+  const flushUpdate = () => {
+    if (!onUpdate) {
+      return
+    }
+    const display =
+      tail.length > TAIL_LINE_COUNT
+        ? tail.slice(-TAIL_LINE_COUNT)
+        : [...tail]
+    onUpdate(display)
+  }
+
+  const scheduleUpdate = () => {
+    if (throttleTimer) {
+      return
+    }
+    throttleTimer = setTimeout(() => {
+      throttleTimer = null
+      flushUpdate()
+    }, TAIL_UPDATE_MS)
+  }
+
+  return {
+    /**
+     * @param {Buffer | string} chunk
+     */
+    pushChunk(chunk) {
+      buffer += chunk.toString()
+      const parts = buffer.split(/\r?\n/)
+      buffer = parts.pop() ?? ''
+      for (const part of parts) {
+        const line = part.replace(/\r$/, '').trimEnd()
+        if (!line) {
+          continue
+        }
+        tail.push(line)
+        if (tail.length > maxLines) {
+          tail = tail.slice(-maxLines)
+        }
+      }
+      scheduleUpdate()
+    },
+    flush() {
+      if (buffer.trim()) {
+        tail.push(buffer.trimEnd())
+        if (tail.length > maxLines) {
+          tail = tail.slice(-maxLines)
+        }
+        buffer = ''
+      }
+      if (throttleTimer) {
+        clearTimeout(throttleTimer)
+        throttleTimer = null
+      }
+      flushUpdate()
+    },
+    getTail() {
+      return [...tail]
+    }
+  }
+}
+
 /**
  * 构建器
  */
@@ -33,21 +113,32 @@ export default class Builder {
   }
 
   /**
+   * 删除本工具生成的 zip 包
+   * @param {string} [pkgPath]
+   */
+  static async deletePkgFile(pkgPath) {
+    if (!pkgPath) {
+      return
+    }
+    const abs = path.isAbsolute(pkgPath)
+      ? pkgPath
+      : path.resolve(process.cwd(), pkgPath)
+    try {
+      await fs.promises.unlink(abs)
+    } catch (error) {
+      if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT') {
+        return
+      }
+      throw error
+    }
+  }
+
+  /**
    * 删除本地文件
    * @returns
    */
   deleteZip() {
-    return new Promise((resolve, reject) => {
-      // console.log(
-      //   path.resolve(process.cwd(), this.outputPkgName))
-      fs.unlink(path.resolve('', this.outputPkgName), function (error) {
-        if (error) {
-          reject(error)
-        } else {
-          resolve(true)
-        }
-      })
-    })
+    return Builder.deletePkgFile(this.outputPkgName)
   }
 
   /**
@@ -58,74 +149,87 @@ export default class Builder {
    */
   zip(inputPath = 'dist/', level = 9) {
     return new Promise(async (resolve, reject) => {
+      if (!distHasContent(inputPath)) {
+        reject(
+          new Error(
+            `打包失败：目录 "${inputPath}" 不存在或为空，请先执行构建或检查 build.distPath`
+          )
+        )
+        return
+      }
+
       const outputPkgName = this.outputPkgName
-      // 创建文件输出流
       const output = fs.createWriteStream(
         path.resolve(process.cwd(), outputPkgName)
       )
       const archive = archiver('zip', {
-        zlib: { level: level || 9 } // 设置压缩级别
+        zlib: { level: level || 9 }
       })
-      // 文件输出流结束
       output.on('close', () => {
-        // console.log(
-        //   chalk.green(`[Builder]: 压缩文件总共 ${archive.pointer()} 字节----`)
-        // )
-        // console.log(chalk.green('[Builder]: 压缩文件夹完毕'))
         resolve({
           name: outputPkgName,
           size: archive.pointer()
         })
       })
-      // 数据源是否耗尽
       output.on('end', () => {
-        // console.log(chalk.red('[Builder]: 压缩失败，数据源已耗尽'))
         reject()
       })
-      // 存档警告
       archive.on('warning', (err) => {
         if (err.code === 'ENOENT') {
-          // console.log(chalk.red('[Builder]: stat故障和其他非阻塞错误'))
         } else {
-          // console.log(chalk.red('[Builder]: 压缩失败'))
         }
         reject(err)
       })
-      // 存档出错
       archive.on('error', (err) => {
-        // console.log(chalk.red('[Builder]: 存档错误，压缩失败 -> ', err))
         reject(err)
       })
-      // 通过管道方法将输出流存档到文件
       archive.pipe(output)
-
-      // 打包dist里面的所有文件和目录
       archive.directory(inputPath, false)
-      // archive.directory(`../${Config.buildDist}/`, false)
-
-      // 完成归档
       archive.finalize()
     })
   }
 
-  build(buildCmd) {
-    // console.log(chalk.blue('[Builder]: 开始编译项目'))
-    return new Promise(async (resolve, reject) => {
+  /**
+   * @param {string} buildCmd
+   * @param {(lines: string[]) => void} [onTailLines] 构建过程中最新 N 行输出
+   */
+  build(buildCmd, onTailLines) {
+    return new Promise((resolve, reject) => {
       if (!buildCmd) {
-        return reject('buildCmd is null')
+        reject(new Error('buildCmd is null'))
+        return
       }
-      const { error, stdout, stderr } = await exec(buildCmd)
 
-      if (error) {
-        // console.error(error)
-        reject(error)
-      } else if (stdout) {
-        resolve(stdout)
-        // console.log(chalk.green('[Builder]: 编译完成'))
-      } else {
-        // console.error(stderr)
-        reject(stderr)
-      }
+      const tailer = createLineTailer(TAIL_ERROR_LINE_COUNT, onTailLines)
+      const child = spawn(buildCmd, {
+        shell: true,
+        cwd: process.cwd(),
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'pipe']
+      })
+
+      child.stdout?.on('data', (chunk) => tailer.pushChunk(chunk))
+      child.stderr?.on('data', (chunk) => tailer.pushChunk(chunk))
+
+      child.on('error', reject)
+      child.on('close', (code) => {
+        tailer.flush()
+        if (code === 0) {
+          resolve(tailer.getTail())
+        } else {
+          const tail = tailer.getTail().slice(-TAIL_ERROR_LINE_COUNT)
+          const err = new Error(
+            tail.length
+              ? `构建命令退出码 ${code}（${buildCmd}）`
+              : `构建命令退出码 ${code}（${buildCmd}），无控制台输出`
+          )
+          if (tail.length) {
+            /** @type {Error & { outputTail: string[] }} */ (err).outputTail =
+              tail
+          }
+          reject(err)
+        }
+      })
     })
   }
 

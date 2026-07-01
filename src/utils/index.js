@@ -1,6 +1,16 @@
 import { exec } from 'child-process-promise'
 import logger from './logger'
 
+export {
+  distHasContent,
+  askRebuildWhenDistExists
+} from './dist-build-prompt.js'
+export {
+  ensureUnzipInstalled,
+  extractRemoteZip
+} from './ensure-unzip.js'
+export { resolveProjectMeta, resolveProjectName, hasProjectManifest, readProjectManifest } from './project-meta.js'
+
 /**
  * @param {keyof import("index").DeployHooks} name
  * @param {object} options
@@ -72,12 +82,48 @@ export async function getDefaultOperator() {
 }
 
 /**
+ * 解析部署路径；Docker 模式未配置 deployPath 时使用服务器临时目录
+ * @param {import('index').DeployConfig} config
+ */
+/**
+ * 部署目录在 /tmp 等路径时，文件读写无需 sudo（避免 SSH 无法输入密码）
+ * @param {import('index').DeployConfig} config
+ */
+export function shouldUseSudoForDeployFiles(config) {
+  const deployPath = resolveDeployPath(config)
+  if (/^\/tmp(\/|$)/.test(deployPath)) {
+    return false
+  }
+  const server = Array.isArray(config.server)
+    ? config.server[0]
+    : config.server
+  return !!server?.cmdUseSudo
+}
+
+import { resolveProjectName } from './project-meta.js'
+
+export function resolveDeployPath(config) {
+  const explicit = config.deploy?.deployPath?.trim().replace(/[/]$/gim, '')
+  if (explicit) {
+    return explicit
+  }
+  if (config.deploy?.docker) {
+    const project = resolveProjectName(config).replace(/[^\w.-]+/g, '_')
+    const env = (config.env || 'default').replace(/[^\w.-]+/g, '_')
+    return `/tmp/autodeploy-${project}-${env}`
+  }
+  return ''
+}
+
+/**
  *
  * @param {import('index').DeployConfig} config
  */
 export function checkDeployConfig(config) {
-  if (!config.deploy?.deployPath) {
-    throw new Error('未填写部署路径 -> deploy.deployPath')
+  if (!resolveDeployPath(config)) {
+    throw new Error(
+      '未填写部署路径 -> deploy.deployPath（非 Docker 部署时必填）'
+    )
   }
 }
 

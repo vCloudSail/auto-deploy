@@ -114,7 +114,7 @@ export interface DeployConfig {
   env: string
   /** 部署环境名称 */
   name: string
-  /** 项目名称，如果不传默认取package.json的name字段 */
+  /** 项目名称；未配置时依次从项目清单（package.json / pyproject.toml / Cargo.toml 等）、目录名、env 解析 */
   projectName?: string
   /** 服务器配置 */
   server: SSHClientConfig
@@ -145,25 +145,72 @@ export interface DeployConfig {
      * 而sftp是不支持权限提升的
      */
     uploadPath: string
-    /** 部署路径，路径的最后一个文件夹为部署文件夹 */
-    deployPath: string
+    /**
+     * 部署路径，路径的最后一个文件夹为部署文件夹。
+     * 配置 deploy.docker 时可省略，将自动使用 /tmp/autodeploy-{项目名}-{环境}
+     */
+    deployPath?: string
     /** 备份路径，默认为deployPath+_backup */
     backupPath: string
     /** 备份路径，默认为deployPath_logs */
     logPath: string
-    /**
-     * docker镜像构建配置
-     *
-     * 1. Dockerfile放在项目根目录下(.dockerfile)，如果不存在则自动生成
-     * 2.
-     */
-    docker: {
-      /** 镜像名称，默认取projectName */
-      name: string
-      /** 主机端口，如果配置了nginx，可以不传此参数 */
-      hostPort: string | number
-      /** 启动镜像额外参数 */
-      startArgs: string
+    /** Docker 镜像构建与容器部署配置 */
+    docker?: {
+      /** 镜像：构建、tag、Dockerfile 等 */
+      image?: {
+        /** 镜像仓库名（不含 tag） */
+        name?: string
+        /** 镜像 tag，未配置时部署过程自动生成时间戳 */
+        tag?: string
+        /** local: 本机构建上传 tar；remote: 服务器构建（默认） */
+        buildMode?: 'local' | 'remote'
+        /** mount: 挂载 dist；embed: COPY 进镜像 */
+        distMode?: 'mount' | 'embed'
+        /** 项目内 Dockerfile 路径（相对项目根），存在则优先于内置模板 */
+        dockerfile?: string
+        /** 内置模板使用的基础镜像，默认 nginx:latest */
+        baseImage?: string
+        /** buildMode 为 local 时，镜像 tar 在服务器上的存放目录，默认 deployPath */
+        tarDir?: string
+      }
+      /** 容器：运行与端口（单容器 docker run 时生效；compose 模式以 yml 为准） */
+      container?: {
+        /** 容器名称，默认 {image.name}_container */
+        name?: string
+        /** 宿主机映射端口；未配置时可使用 nginx.listen */
+        hostPort?: string | number
+        /** 容器内监听端口，默认 8080 */
+        port?: number
+        /** docker run 额外参数 */
+        startArgs?: string
+      }
+      compose?: {
+        /** managed: 上传本地 compose；remote: 使用服务器已有 compose 栈 */
+        mode?: 'managed' | 'remote'
+        /** managed: 相对项目根；remote: 服务器上文件名或绝对路径 */
+        file?: string
+        /** compose 工作目录；remote 模式必填 */
+        workDir?: string
+        /**
+         * docker compose -p 的项目名（可选）；
+         * 未配置时从 compose 文件 name、.env 的 COMPOSE_PROJECT_NAME、
+         * docker compose ls 或 workDir 目录名自动解析
+         */
+        projectName?: string
+        /**
+         * 仅对该服务执行 compose up，值为 yml 中 services 下的 key（如 web）；
+         * 不配置则 up 全部服务
+         */
+        service?: string
+        /** 是否 --force-recreate，默认 true */
+        forceRecreate?: boolean
+        /** compose up 前注入的环境变量 */
+        env?: Record<string, string>
+        /** managed 模式：本地 env 文件路径（相对项目根） */
+        envFile?: string
+        /** remote 模式：是否覆盖上传本地 compose 文件，默认 false */
+        syncComposeFile?: boolean
+      }
     }
   }
   hooks: DeployHooks
@@ -203,6 +250,8 @@ export interface DeployOptions {
   rollback: boolean | number | string
   /** 文件路径，传了就表示部署指定文件 */
   file?: string
+  /** 本地构建的 Docker 镜像 tar 绝对路径（buildMode: local 时由 main 传入） */
+  imageTarLocalPath?: string
 }
 
 // export interface DeployRunningPromptDataMap {

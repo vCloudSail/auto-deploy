@@ -1,5 +1,3 @@
-const package = require('./package.json')
-
 /** @type {import('./deploy.config').DeployConfigMap} */
 const configs = {
   dev: {
@@ -21,7 +19,28 @@ const configs = {
       // bakupPath: '/home/xxx_backup', // 非必填，默认deployPath+_backup
       // logPath: '/home/xxx_logs', // 非必填，默认deployPath+_logs
       docker: {
-        hostPort: 18080
+        image: {
+          name: 'my-web-dev',
+          buildMode: 'remote', // remote | local（local 需本机 Docker）
+          distMode: 'mount' // mount | embed
+        },
+        container: {
+          hostPort: 18080
+        }
+        // compose: {
+        //   mode: 'managed',
+        //   file: './docker-compose.yml',
+        //   projectName: 'my-web-dev'
+        // }
+        // compose 接入远端已有栈:
+        // compose: {
+        //   mode: 'remote',
+        //   workDir: '/opt/myapp',
+        //   file: 'docker-compose.yml',
+        //   projectName: 'myapp', // 可选，不配则从 compose 文件 / workDir 自动解析
+        //   service: 'web',
+        //   syncComposeFile: false
+        // }
       }
     },
     nginx: {

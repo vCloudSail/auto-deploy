@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import net from 'node:net'
 
 import logger from '../utils/logger.js'
+import { progress, done, connected, fail } from '../utils/cli-log.js'
 import { PasswordCacher } from '../utils/cacher.js'
 import path from 'node:path'
 import _, { omit } from 'lodash'
@@ -110,11 +111,8 @@ export default class SSHClient {
       config = await this.#checkConfig(config)
 
       if (config.proxy && !config.sock) {
-        logger.info(
-          `[SSHClient] 使用代理连接中 -> ${config.proxy.type || 'http'}://${
-            config.proxy.host
-          }:${config.proxy.port}`,
-          { loading: true }
+        logger.debug(
+          `经代理连接 ${config.proxy.type || 'http'}://${config.proxy.host}:${config.proxy.port}`
         )
         try {
           const targetPort = Number(config.port) || 22
@@ -130,10 +128,7 @@ export default class SSHClient {
             host: undefined,
             port: undefined
           }
-          logger.info(
-            `[SSHClient] 通过代理建立到 ${client === this.clientAgent ? '跳板机' : '服务器'} 的连接成功`,
-            { success: true }
-          )
+          logger.debug('代理隧道已建立')
         } catch (err) {
           logger.error(
             `[SSHClient] 通过代理连接失败，请检查代理配置： ${err + ''}`
@@ -664,13 +659,10 @@ export default class SSHClient {
   connect() {
     return new Promise(async (resolve, reject) => {
       if (this.hasAgent) {
-        logger.info(
-          `连接跳板机中 -> ${this.agentConfig?.host}:${this.agentConfig?.port}`,
-          { loading: true }
-        )
+        logger.info(progress('连接跳板机'), { loading: true })
         await this.#connectAsync(this.clientAgent, this.agentConfig)
         logger.info(
-          `连接到跳板机成功 -> ${this.agentConfig?.host}:${this.agentConfig?.port}`,
+          done('跳板机已连接', `${this.agentConfig?.host}:${this.agentConfig?.port}`),
           { success: true }
         )
 
@@ -687,50 +679,38 @@ export default class SSHClient {
               }
 
               try {
-                logger.info(
-                  `连接服务器中 -> ${this.config?.host}:${this.config?.port}`,
-                  { loading: true }
-                )
-                // 连接目标机
+                logger.info(progress('连接服务器'), { loading: true })
                 await this.#connectAsync(this.client, {
                   sock: stream
                 })
                 logger.info(
-                  `连接到服务器成功 -> ${this.config?.host}:${this.config?.port}`,
+                  connected(this.config?.host, this.config?.port),
                   { success: true }
                 )
 
                 resolve(true)
               } catch (error) {
-                logger.error(
-                  '连接服务器失败，请检查用户名、密码和代理配置： ' + error
-                )
+                logger.error(fail('连接服务器', error))
                 reject(error)
               }
             }
           )
           .once('error', (err) => {
-            logger.error(
-              '连接跳板机失败，请检查用户名、密码和代理配置： ' + error
-            )
+            logger.error(fail('连接跳板机', error))
             reject(err)
           })
         return
       }
 
       try {
-        logger.info(
-          `连接服务器中 -> ${this.config?.host}:${this.config?.port}`,
-          { loading: true }
-        )
+        logger.info(progress('连接服务器'), { loading: true })
         await this.#connectAsync(this.client, this.config)
-        logger.info(
-          `连接到服务器成功 -> ${this.config?.host}:${this.config?.port}`,
-          { success: true }
-        )
+        logger.info(connected(this.config?.host, this.config?.port), {
+          success: true
+        })
         resolve(true)
       } catch (error) {
-        logger.error('连接服务器失败，请检查用户名、密码和代理配置： ' + error)
+        logger.error(fail('连接服务器', error))
         reject(error)
       }
     })
@@ -787,10 +767,11 @@ export default class SSHClient {
   /**
    * 执行命令
    * @param {string} command
-   * @param {(data:any) => void} receiveDataCallback
-   * @returns {Promise<boolean|string>}
+   * @param {(data:any) => void} [receiveDataCallback]
+   * @param {{ useSudo?: boolean }} [options] useSudo 默认取 cmdUseSudo
+   * @returns {Promise<string>}
    */
-  exec(command, receiveDataCallback) {
+  exec(command, receiveDataCallback, options = {}) {
     // function sudo(channel) {
     //   return new Promise((resolve, reject) => {
     //     channel.write('sudo su', (err) => {
@@ -808,7 +789,8 @@ export default class SSHClient {
       return Promise.reject(new Error('command is required'))
     }
 
-    if (this.cmdUseSudo) {
+    const useSudo = options.useSudo ?? this.cmdUseSudo
+    if (useSudo) {
       command = `sudo sh -c "${command}"`
     }
 
@@ -817,28 +799,32 @@ export default class SSHClient {
         // await sudo(channel)
 
         let output = ''
+        let stderr = ''
         if (err || !channel) {
           reject(err)
         } else {
-          const cb = (code, signal) => {
-            resolve(output || true)
-          }
-
           channel
-            .once('close', cb)
-            // .once('end', cb)
-            // .once('exit', cb)
-            // .once('eof', cb)
+            .once('close', (code) => {
+              if (code !== 0 && code != null) {
+                reject(
+                  (stderr || output).trim() ||
+                    `Command failed with exit code ${code}`
+                )
+                return
+              }
+              resolve(output)
+            })
             .on('data', function (data) {
               logger.debug('client received data: ' + data)
               receiveDataCallback?.(data)
               if (data) {
                 output += data.toString()
-                // output.push(data.toString())
               }
             })
-            .stderr.once('data', function (data) {
-              reject(data.toString())
+            .stderr.on('data', function (data) {
+              if (data) {
+                stderr += data.toString()
+              }
             })
         }
       })

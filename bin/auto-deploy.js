@@ -7,28 +7,100 @@ import { createRequire } from 'module'
 import { createCommand } from 'commander'
 import { cosmiconfig } from 'cosmiconfig'
 import { createPromptModule } from 'inquirer'
+import chalk from 'chalk'
 import ora from 'ora'
 import winston from 'winston'
 
-// import autodeploy, { setLogger } from '../src/main.js'
-
-import autodeploy, { addTransport } from '../dist/index.js'
+import autodeploy, {
+  addTransport,
+  hasProjectManifest
+} from '../dist/index.js'
 
 const spinner = ora()
 const basePath = import.meta.url.replace(/file:\/+(.*auto-deploy)\/.*/gi, '$1')
+
+/**
+ * @param {number} index
+ * @param {number} total
+ * @param {string} text
+ */
+function formatStepPrefix(index, total, text) {
+  if (!index || !total) {
+    return text
+  }
+  return `${chalk.gray(`[${index}/${total}]`)} ${text}`
+}
+
+/**
+ * @param {string} msg
+ * @param {Record<string, unknown>} data
+ */
+function formatConsoleMessage(msg, data) {
+  if (data.cliContext) {
+    return chalk.dim(`  ${msg}`)
+  }
+
+  const index = /** @type {number | undefined} */ (data.stepIndex)
+  const total = /** @type {number | undefined} */ (data.stepTotal)
+
+  if (
+    data.cliStep === 'start' ||
+    data.cliStep === 'done' ||
+    data.cliStep === 'skip' ||
+    data.cliStep === 'fail'
+  ) {
+    return formatStepPrefix(index, total, msg)
+  }
+
+  if (data.buildTail && index && total) {
+    const lines = msg.split('\n')
+    lines[0] = formatStepPrefix(index, total, lines[0])
+    return lines.join('\n')
+  }
+
+  return msg
+}
 
 const logger = addTransport(
   new winston.transports.Console({
     format: {
       transform(data) {
-        const msg = (data.host ? `[${data.host}] ` : '') + data.message
+        const hostPrefix = data.host ? `[${data.host}] ` : ''
+        const msg = hostPrefix + formatConsoleMessage(data.message, data)
 
         if (data.level === 'info') {
+          if (data.section || String(data.message || '').startsWith('── ')) {
+            spinner.stop()
+            spinner.info(msg)
+            return false
+          }
+          if (data.cliContext) {
+            spinner.stop()
+            console.log(msg)
+            return false
+          }
           if (data.loading) {
-            spinner.start(msg)
+            if (data.buildTail) {
+              if (spinner.isSpinning) {
+                spinner.text = msg
+              } else {
+                spinner.start(msg)
+              }
+            } else {
+              spinner.start(msg)
+            }
             return false
           } else if (data.success) {
-            spinner.succeed(msg)
+            const lines = msg.split('\n')
+            spinner.succeed(chalk.green(lines[0]))
+            for (let i = 1; i < lines.length; i++) {
+              console.log(chalk.dim(lines[i]))
+            }
+            return false
+          }
+          if (data.cliStep === 'skip') {
+            spinner.stop()
+            spinner.info(chalk.yellow(msg))
             return false
           }
           spinner.stop()
@@ -38,14 +110,24 @@ const logger = addTransport(
 
           spinner.stop()
           switch (data.level) {
-            case 'warn':
-              spinner.warn(msg)
+            case 'warn': {
+              const lines = msg.split('\n')
+              spinner.warn(lines[0])
+              for (let i = 1; i < lines.length; i++) {
+                console.log(chalk.dim(lines[i]))
+              }
               break
-            case 'error':
-              spinner.fail(msg)
+            }
+            case 'error': {
+              const lines = msg.split('\n')
+              spinner.fail(chalk.red(lines[0]))
+              for (let i = 1; i < lines.length; i++) {
+                console.error(chalk.red(lines[i]))
+              }
               break
+            }
             case 'debug':
-              spinner.info(msg)
+              spinner.info(chalk.dim(msg))
               break
           }
         }
@@ -62,21 +144,19 @@ const pkg = require('../package.json')
 const prompt = createPromptModule()
 const program = createCommand()
 
-// const autodeploy = '../dist/index.umd.cjs')
-
 program
   .name('auto-deploy')
   .description('基于nodejs的WEB前端自动化部署cli工具')
-  .version(pkg.version, '-v, -V, -version') // 从package.json中读取当前工具的最新版本号
+  .version(pkg.version, '-v, -V, -version')
   .option('-d, --debug [debug]', '是否开启调试模式', false)
 
 program
-  .usage('[env] [options]') // 使用方式介绍
+  .usage('[env] [options]')
   .option('-e, --env <env>', '指定目标环境')
   .option('-bak, --backup [backup]', '部署前是否备份当前服务器版本')
   .option('-rb, --rollback [rollback]', '回退到指定版本', 0)
   .option('--file [file]', '部署指定文件(zip压缩包)')
-  .parse(process.argv) // 格式化参数 返回参数的配置
+  .parse(process.argv)
 
 const options = program.opts()
 
@@ -104,26 +184,46 @@ async function main() {
   logger.debug('当前文件目录：' + import.meta.url)
 
   try {
-    // 先尝试直接加载执行路径下的配置文件
     const configPath = path.resolve(process.cwd(), 'deploy.config.cjs')
     logger.debug('配置文件路径：' + configPath)
 
-    if (
-      !fs.existsSync(configPath) &&
-      fs.existsSync(path.resolve(process.cwd(), 'package.json'))
-    ) {
-      throw new Error('不存在配置文件，将创建默认配置文件')
+    if (!fs.existsSync(configPath) && hasProjectManifest(process.cwd())) {
+      throw new Error('__INIT_DEFAULT_CONFIG__')
     }
 
-    // 如果执行路径下存在配置文件，直接加载
     const searchResult = await explorer.search(process.cwd())
     logger.debug('从执行路径加载配置文件：' + configPath)
 
+    if (!searchResult?.config) {
+      throw new Error('未找到有效的 deploy 配置')
+    }
+
     originConfig = searchResult.config
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
     logger.debug('加载配置文件出错：' + error)
-    spinner.warn('不存在配置文件，将创建默认配置文件')
 
+    if (message === '__INIT_DEFAULT_CONFIG__') {
+      spinner.warn('不存在配置文件，将创建默认配置文件')
+      initConfig()
+      return
+    }
+
+    const configPath = path.resolve(process.cwd(), 'deploy.config.cjs')
+    if (fs.existsSync(configPath)) {
+      spinner.fail(`配置文件加载失败：${message}`)
+      if (message.includes('package.json')) {
+        console.error(
+          chalk.yellow(
+            '提示：请从 deploy.config.cjs 中删除 require("./package.json")，并改用 projectName 字段；项目名也会自动从清单文件或目录名解析。'
+          )
+        )
+      }
+      process.exit(1)
+      return
+    }
+
+    spinner.warn('不存在配置文件，将创建默认配置文件')
     initConfig()
     return
   } finally {
@@ -200,9 +300,6 @@ async function main() {
   )
   config.prompt = prompt
 
-  // if (options.rollback === true) {
-  //   return
-  // }
   autodeploy(config, {
     ...options,
     backup: options.backup,
